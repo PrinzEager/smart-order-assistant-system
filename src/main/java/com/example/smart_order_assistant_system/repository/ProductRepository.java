@@ -28,7 +28,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Product> findByStatusAndDeletedAtIsNull(Byte status);
 
     // 查詢已刪除的商品
-    List<Product> findByDeletedAtIsNotNull(Byte status);
+    List<Product> findByDeletedAtIsNotNull();
 
     // 商品名稱模糊搜尋
     List<Product> findByNameContainingIgnoreCase(String name);
