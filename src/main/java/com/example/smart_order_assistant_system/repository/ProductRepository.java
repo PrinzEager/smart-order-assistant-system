@@ -2,6 +2,8 @@ package com.example.smart_order_assistant_system.repository;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -35,6 +37,19 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     // 依分類編號查詢商品
     List<Product> findByCategory_Id(Long categoryId);
+
+    // Page 版本：分頁查詢
+    Page<Product> findByStatusAndDeletedAtIsNull(
+            Byte status,
+            Pageable pageable
+    );
+
+    // 根據商品名稱模糊搜尋，並且只查詢正常商品
+    Page<Product> findByNameContainingIgnoreCaseAndStatusAndDeletedAtIsNull(
+            String name,
+            Byte status,
+            Pageable pageable
+    );
 
 
 }

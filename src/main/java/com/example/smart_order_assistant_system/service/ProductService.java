@@ -2,6 +2,8 @@ package com.example.smart_order_assistant_system.service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +27,15 @@ public class ProductService {
         return productRepository.findByStatusAndDeletedAtIsNull(
                 (byte) 1
         );
+    }
+
+    // 分頁取得所有正常商品
+    public Page<Product> findAllProducts(Pageable pageable) {
+        return productRepository
+                .findByStatusAndDeletedAtIsNull(
+                        (byte) 1,
+                        pageable
+                );
     }
 
     // 依商品 ID 查詢啟用且未軟刪除的商品
@@ -56,6 +67,18 @@ public class ProductService {
                 .stream()
                 .filter(this::isAvailable)
                 .toList();
+    }
+
+    // 分頁搜尋商品名稱
+    public Page<Product> searchProductsByName(
+            String name,
+            Pageable pageable) {
+        return productRepository
+                .findByNameContainingIgnoreCaseAndStatusAndDeletedAtIsNull(
+                        name,
+                        (byte) 1,
+                        pageable
+                );
     }
 
     // 依商品代碼查詢
