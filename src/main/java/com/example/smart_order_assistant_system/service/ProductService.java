@@ -55,6 +55,25 @@ public class ProductService {
 
         return product;
     }
+    
+    /*
+     * 更新商品圖片網址
+     * @param productId 商品 ID
+     * @param imageUrl 商品圖片網址
+     * @return 更新後的商品
+     */
+    @Transactional(readOnly = false)
+    public Product updateProductImageUrl(Long productId, String imageUrl) {
+        
+        // 1. 先確認商品是否存在、啟用且未刪除
+        Product product = findProductById(productId);
+
+        // 2. 更新商品圖片網址
+        product.setImageUrl(imageUrl);
+
+        // 3. 儲存更新後的商品
+        return productRepository.save(product);
+    }
 
     // 依商品名稱搜尋，不區分大小寫
     public List<Product> searchProductsByName(String name) {
