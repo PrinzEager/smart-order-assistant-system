@@ -85,4 +85,51 @@ public class ProductImageService {
         // 9. 回傳圖片網址
         return "/uploads/products/" + fileName;
     }
+
+    /**
+     * 刪除商品圖片
+     *
+     * @param imageUrl 資料庫中儲存的圖片網址
+     */
+    public void deleteProductImage(String imageUrl) {
+
+        // 1. 沒有圖片網址，就不需要刪除
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return;
+        }
+
+        // 2. 確認圖片網址是系統管理的商品圖片
+        String prefix = "/uploads/products/";
+
+        if (!imageUrl.startsWith(prefix)) {
+            throw new IllegalArgumentException("不合法的商品圖片路徑");
+        }
+
+        // 3. 取得圖片檔名
+        String fileName = imageUrl.substring(prefix.length());
+
+        // 避免有人透過路徑跳脫指定資料夾
+        if (fileName.isBlank()
+                || !Path.of(fileName).getFileName().toString().equals(fileName)) {
+            throw new IllegalArgumentException("不合法的商品圖片檔名");
+        }
+
+        // 4. 組合實際圖片路徑
+        Path uploadPath = Path.of(uploadDir)
+                .toAbsolutePath()
+                .normalize();
+
+        Path imagePath = uploadPath.resolve(fileName).normalize();
+
+        if (!imagePath.startsWith(uploadPath)) {
+            throw new IllegalArgumentException("不合法的圖片儲存路徑");
+        }
+
+        // 5. 刪除圖片
+        try {
+            Files.deleteIfExists(imagePath);
+        } catch (IOException e) {
+            throw new IllegalStateException("圖片刪除失敗", e);
+        }
+    }
 }

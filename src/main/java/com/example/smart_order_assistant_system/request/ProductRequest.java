@@ -37,11 +37,11 @@ public class ProductRequest {
 
     // 商品售價
     @NotNull(message = "商品售價不可為空")
-    @DecimalMin(value = "0.01", message = "商品售價不可小於 0")
+    @DecimalMin(value = "0.01", message = "商品售價需大於 0")
     private BigDecimal price;
 
     // 商品成本
-    @DecimalMin(value = "0.01", message = "商品成本不可小於 0")
+    @DecimalMin(value = "0.01", message = "商品成本需大於 0")
     private BigDecimal costPrice;
 
     // 商品單位

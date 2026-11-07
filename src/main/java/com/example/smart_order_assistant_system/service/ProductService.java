@@ -88,16 +88,25 @@ public class ProductService {
                 .toList();
     }
 
-    // 分頁搜尋商品名稱
-    public Page<Product> searchProductsByName(
-            String name,
+    // 依商品名稱、SKU、Barcode 搜尋商品
+    public Page<Product> searchProducts(
+            String keyword,
             Pageable pageable) {
-        return productRepository
-                .findByNameContainingIgnoreCaseAndStatusAndDeletedAtIsNull(
-                        name,
-                        (byte) 1,
-                        pageable
-                );
+
+        // 如果關鍵字為空，查詢全部正常商品
+        if (keyword == null || keyword.isBlank()) {
+            return findAllProducts(pageable);
+        }
+
+        // 去除前後空白
+        String searchKeyword = keyword.trim();
+
+        // 執行多欄位搜尋
+        return productRepository.searchProducts(
+                searchKeyword,
+                (byte) 1,
+                pageable
+        );
     }
 
     // 依商品代碼查詢
@@ -170,7 +179,10 @@ public class ProductService {
         existingProduct.setCategory(newData.getCategory());
         existingProduct.setSku(newData.getSku());
         existingProduct.setBarcode(newData.getBarcode());
-        existingProduct.setImageUrl(newData.getImageUrl());
+        // 只有當新圖片網址不為 null 時，才更新圖片
+        if (newData.getImageUrl() != null) {
+            existingProduct.setImageUrl(newData.getImageUrl());
+        }
         existingProduct.setName(newData.getName());
         existingProduct.setPrice(newData.getPrice());
         existingProduct.setCostPrice(newData.getCostPrice());

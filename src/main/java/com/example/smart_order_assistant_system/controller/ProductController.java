@@ -72,8 +72,8 @@ public class ProductController {
         // 如果有輸入關鍵字，就進行商品名稱搜尋
         if (keyword != null && !keyword.isBlank()) {
 
-            products = productService.searchProductsByName(
-                    keyword.trim(),
+            products = productService.searchProducts(
+                    keyword,
                     pageable
             );
 
@@ -153,7 +153,7 @@ public class ProductController {
 
 
     // ==========================================
-    // 5. 停用商品（軟刪除）
+    // 5. 停用商品
     // ==========================================
 
     @PatchMapping("/{id}/deactivate")

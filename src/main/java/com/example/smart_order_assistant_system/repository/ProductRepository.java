@@ -6,6 +6,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import com.example.smart_order_assistant_system.entity.Product;
@@ -51,5 +53,23 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             Pageable pageable
     );
 
+    // 商品名稱、SKU、Barcode 多欄位模糊搜尋
+    // 只查詢啟用且未軟刪除的商品
+     @Query("""
+        SELECT p FROM Product p
+        WHERE
+            (
+                LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
+                OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%'))
+                OR LOWER(p.barcode) LIKE LOWER(CONCAT('%', :keyword, '%'))
+            )
+            AND p.status = :status
+            AND p.deletedAt IS NULL
+        """)
+    Page<Product> searchProducts(
+            @Param("keyword") String keyword,
+            @Param ("status") Byte status,
+            Pageable pageable
+    );
 
 }
