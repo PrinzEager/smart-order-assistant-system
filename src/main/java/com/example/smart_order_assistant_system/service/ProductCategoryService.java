@@ -8,270 +8,318 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.smart_order_assistant_system.entity.ProductCategory;
 import com.example.smart_order_assistant_system.repository.ProductCategoryRepository;
+import com.example.smart_order_assistant_system.repository.ProductRepository;
+import com.example.smart_order_assistant_system.request.ProductCategoryRequest;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ProductCategoryService {
 
     private final ProductCategoryRepository categoryRepository;
+    private final ProductRepository productRepository;
 
-    // 建構子注入
-    public ProductCategoryService(
-            ProductCategoryRepository categoryRepository) {
-        this.categoryRepository = categoryRepository;
-    }
+    // 分類狀態：啟用
+    private static final Byte ACTIVE = 1;
 
-    // 查詢所有啟用且未軟刪除的分類
+    // 分類狀態：停用
+    private static final Byte INACTIVE = 0;
+
+    /**
+     * 查詢所有啟用且未刪除的分類
+     */
     public List<ProductCategory> findAllCategories() {
-        return categoryRepository.findByStatusAndDeletedAtIsNull(
-                (byte) 1
-        );
+
+        return categoryRepository.findByStatusAndDeletedAtIsNull(ACTIVE);
     }
 
-    // 依 ID 查詢分類
-    public ProductCategory findCategoryById(Long id) {
-        ProductCategory category = categoryRepository.findById(id)
+    /**
+     * 根據 ID 查詢啟用分類
+     */
+    public ProductCategory findCategoryById(Long categoryId) {
+
+        return categoryRepository
+                .findByIdAndStatusAndDeletedAtIsNull(categoryId, ACTIVE)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "找不到商品分類，ID：" + id
-                        )
-                );
-
-        if (!isAvailable(category)) {
-            throw new IllegalArgumentException(
-                    "分類不存在、已停售或已刪除"
-            );
-        }
-
-        return category;
+                        new IllegalArgumentException("商品分類不存在或已停用"));
     }
 
-    // 依分類名稱搜尋
-    public List<ProductCategory> searchCategoriesByName(String name) {
-        if (name == null || name.isBlank()) {
+    /**
+     * 查詢最上層分類
+     */
+    public List<ProductCategory> findRootCategories() {
+
+        return categoryRepository
+                .findByParentIsNullAndStatusAndDeletedAtIsNull(ACTIVE);
+    }
+
+    /**
+     * 查詢指定分類底下的子分類
+     */
+    public List<ProductCategory> findChildren(Long parentId) {
+
+        // 先確認上層分類存在且啟用
+        findCategoryById(parentId);
+
+        return categoryRepository
+                .findByParent_IdAndStatusAndDeletedAtIsNull(parentId, ACTIVE);
+    }
+
+    /**
+     * 搜尋分類名稱
+     */
+    public List<ProductCategory> searchCategories(String keyword) {
+
+        if (keyword == null || keyword.isBlank()) {
             return findAllCategories();
         }
 
         return categoryRepository
-                .findByNameContainingIgnoreCase(name.trim())
-                .stream()
-                .filter(this::isAvailable)
-                .toList();
+                .findByNameContainingIgnoreCaseAndStatusAndDeletedAtIsNull(
+                        keyword.trim(),
+                        ACTIVE
+                );
     }
 
-    // 查詢指定上層分類底下的子分類
-    public List<ProductCategory> findChildrenByParentId(Long parentId) {
-        // 確認上層分類存在且可使用
-        findCategoryById(parentId);
-
-        return categoryRepository.findByParent_Id(parentId)
-                .stream()
-                .filter(this::isAvailable)
-                .toList();
-    }
-
-    // 查詢所有最上層分類
-    public List<ProductCategory> findRootCategories() {
-        return categoryRepository.findByParentIsNull()
-                .stream()
-                .filter(this::isAvailable)
-                .toList();
-    }
-
-    // 新增分類
+    /**
+     * 新增商品分類
+     * 新增商品分類時，null 代表最上層分類，否則為子分類
+     * 新增商品分類時，若上層分類(直接輸入id的情況下)不存在，會拋出 IllegalArgumentException
+     * 新增商品分類時，若同一個上層分類底下已有相同名稱的分類，會拋出 IllegalArgumentException
+     */
     @Transactional
-    public ProductCategory createCategory(ProductCategory category) {
-        validateCategory(category);
+    public ProductCategory createCategory(ProductCategoryRequest request) {
 
-        // 檢查上層分類是否有效
-        if (category.getParent() != null) {
-            ProductCategory parent =
-                    findCategoryById(category.getParent().getId());
+        validateRequest(request);
 
-            category.setParent(parent);
-        }
+        String name = request.getName().trim();
 
-        // 檢查同一層級是否有相同名稱
-        // Entity 並沒有 parentId 這個欄位或 getter
-        // 因為是透過 ProductCategory parent 物件建立自我關聯
-        validateDuplicateName(
-        category.getName(),
-        category.getParent() == null
-                ? null
-                : category.getParent().getId()
-        );
+        // 取得上層分類
+        ProductCategory parent = getValidParent(request.getParentId());
+
+        // 檢查分類名稱是否重複
+        checkDuplicateName(name, parent);
+
+        // DTO 轉換成 Entity
+        ProductCategory category = request.toEntity();
+
+        category.setName(name);
+        category.setParent(parent);
+        category.setStatus(ACTIVE);
+        category.setDeletedAt(null);
 
         LocalDateTime now = LocalDateTime.now();
 
-        category.setStatus((byte) 1);
-        category.setDeletedAt(null);
         category.setCreatedAt(now);
         category.setUpdatedAt(now);
 
         return categoryRepository.save(category);
     }
 
-    // 修改分類
+    /**
+     * 修改商品分類
+     */
     @Transactional
     public ProductCategory updateCategory(
-            Long id, ProductCategory newData) {
+            Long categoryId,
+            ProductCategoryRequest request) {
 
-        validateCategory(newData);
+        validateRequest(request);
 
-        ProductCategory existing = findCategoryById(id);
+        // 找出原本分類
+        ProductCategory category = findCategoryById(categoryId);
+
+        String name = request.getName().trim();
 
         // 取得新的上層分類
-        ProductCategory newParent = null;
+        ProductCategory parent = getValidParent(request.getParentId());
 
-        if (newData.getParent() != null) {
-            Long parentId = newData.getParent().getId();
+        // 檢查是否會產生循環關聯
+        validateHierarchy(category, parent);
 
-            if (parentId == null) {
-                throw new IllegalArgumentException(
-                        "上層分類 ID 不可為空"
-                );
-            }
+        // 檢查名稱是否與其他分類重複
+        checkDuplicateNameForUpdate(name, parent, categoryId);
 
-            if (id.equals(parentId)) {
-                throw new IllegalArgumentException(
-                        "分類不可設定自己為上層分類"
-                );
-            }
-
-            newParent = findCategoryById(parentId);
-
-            // 不可把自己的下層分類設成上層分類
-            if (isDescendant(newParent, id)) {
-                throw new IllegalArgumentException(
-                        "不可將自己的下層分類設定為上層分類"
-                );
-            }
-        }
-
-        // 檢查同一層級是否有相同名稱
-        validateDuplicateName(
-                newData.getName(),
-                newParent == null ? null : newParent.getId(),
-                id
-        );
-
-        existing.setName(newData.getName());
-        existing.setParent(newParent);
-        existing.setUpdatedAt(LocalDateTime.now());
-
-        return categoryRepository.save(existing);
-    }
-
-    // 停用分類
-    @Transactional
-    public ProductCategory deactivateCategory(Long id) {
-        ProductCategory category = findCategoryById(id);
-
-        category.setStatus((byte) 0);
+        // 更新資料
+        category.setName(name);
+        category.setParent(parent);
         category.setUpdatedAt(LocalDateTime.now());
 
         return categoryRepository.save(category);
     }
 
-    // 軟刪除分類
+    /**
+     * 停用商品分類
+     */
     @Transactional
-    public ProductCategory deleteCategory(Long id) {
-        ProductCategory category = findCategoryById(id);
+    public void deactivateCategory(Long categoryId) {
 
-        // 不允許刪除仍有啟用子分類的分類
-        boolean hasActiveChildren =
-                categoryRepository.findByParent_Id(id)
-                        .stream()
-                        .anyMatch(this::isAvailable);
+        ProductCategory category = findCategoryById(categoryId);
 
-        if (hasActiveChildren) {
+        // 有子分類時，不允許直接停用
+        if (!categoryRepository.findByParent_Id(categoryId).isEmpty()) {
             throw new IllegalArgumentException(
-                    "此分類仍有啟用的子分類，請先處理子分類"
+                    "此分類底下仍有子分類，請先處理子分類"
             );
         }
 
-        category.setStatus((byte) 0);
-        category.setDeletedAt(LocalDateTime.now());
+        category.setStatus(INACTIVE);
         category.setUpdatedAt(LocalDateTime.now());
 
-        return categoryRepository.save(category);
+        categoryRepository.save(category);
     }
 
-    // 驗證分類名稱
-    private void validateCategory(ProductCategory category) {
-        if (category == null) {
+    /**
+     * 軟刪除商品分類
+     */
+    @Transactional
+    public void deleteCategory(Long categoryId) {
+
+        ProductCategory category = findCategoryById(categoryId);
+
+        // 有子分類時，不允許刪除
+        if (!categoryRepository.findByParent_Id(categoryId).isEmpty()) {
+            throw new IllegalArgumentException(
+                    "此分類底下仍有子分類，無法刪除"
+            );
+        }
+
+        // 有商品使用此分類時，不允許刪除
+        if (!productRepository.findByCategory_Id(categoryId).isEmpty()) {
+            throw new IllegalArgumentException(
+                    "此分類仍有商品使用，無法刪除"
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        category.setStatus(INACTIVE);
+        category.setDeletedAt(now);
+        category.setUpdatedAt(now);
+
+        categoryRepository.save(category);
+    }
+
+    /**
+     * 驗證 Request
+     */
+    private void validateRequest(ProductCategoryRequest request) {
+
+        if (request == null) {
             throw new IllegalArgumentException("分類資料不可為空");
         }
 
-        if (category.getName() == null
-                || category.getName().isBlank()) {
+        if (request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("分類名稱不可為空");
         }
 
-        if (category.getName().length() > 100) {
-            throw new IllegalArgumentException(
-                    "分類名稱不可超過 100 個字元"
-            );
+        if (request.getName().trim().length() > 100) {
+            throw new IllegalArgumentException("分類名稱不可超過100個字");
         }
     }
 
-    // 檢查同一層級是否有重複分類名稱
-    private void validateDuplicateName(
-            String name, Long parentId) {
-        validateDuplicateName(name, parentId, null);
-    }
+    /**
+     * 取得有效的上層分類
+     */
+    private ProductCategory getValidParent(Long parentId) {
 
-    private void validateDuplicateName(
-            String name, Long parentId, Long excludeId) {
-
-        List<ProductCategory> categories;
-
+        // null 代表最上層分類
         if (parentId == null) {
-            categories = categoryRepository
-                    .findByNameAndParentIsNull(name)
-                    .stream()
-                    .toList();
-        } else {
-            categories = categoryRepository.findByParent_Id(parentId)
-                    .stream()
-                    .filter(c -> c.getName().equals(name))
-                    .toList();
+            return null;
         }
 
-        boolean duplicate = categories.stream()
-                .anyMatch(c ->
-                        !c.getId().equals(excludeId)
-                                && c.getDeletedAt() == null
-                );
+        return findCategoryById(parentId);
+    }
 
-        if (duplicate) {
-            throw new IllegalArgumentException(
-                    "同一層級已存在相同名稱的分類：" + name
-            );
+    /**
+     * 新增時檢查分類名稱是否重複
+     */
+    private void checkDuplicateName(
+            String name,
+            ProductCategory parent) {
+
+        boolean exists;
+
+        if (parent == null) {
+
+            exists = categoryRepository
+                    .existsByNameAndParentIsNullAndStatusAndDeletedAtIsNull(
+                            name,
+                            ACTIVE
+                    );
+
+        } else {
+
+            exists = categoryRepository
+                    .existsByNameAndParent_IdAndStatusAndDeletedAtIsNull(
+                            name,
+                            parent.getId(),
+                            ACTIVE
+                    );
+        }
+
+        if (exists) {
+            throw new IllegalArgumentException("相同上層分類底下已有相同名稱");
         }
     }
 
-    // 判斷指定分類是否為某個分類的下層分類
-    private boolean isDescendant(
-            ProductCategory category, Long ancestorId) {
+    /**
+     * 修改時檢查分類名稱是否重複
+     */
+    private void checkDuplicateNameForUpdate(
+            String name,
+            ProductCategory parent,
+            Long categoryId) {
 
-        ProductCategory current = category;
+        boolean exists;
+
+        if (parent == null) {
+
+            exists = categoryRepository
+                    .existsByNameAndParentIsNullAndStatusAndDeletedAtIsNullAndIdNot(
+                            name,
+                            ACTIVE,
+                            categoryId
+                    );
+
+        } else {
+
+            exists = categoryRepository
+                    .existsByNameAndParent_IdAndStatusAndDeletedAtIsNullAndIdNot(
+                            name,
+                            parent.getId(),
+                            ACTIVE,
+                            categoryId
+                    );
+        }
+
+        if (exists) {
+            throw new IllegalArgumentException("相同上層分類底下已有相同名稱");
+        }
+    }
+
+    /**
+     * 檢查是否會形成循環分類
+     */
+    private void validateHierarchy(
+            ProductCategory category,
+            ProductCategory newParent) {
+
+        ProductCategory current = newParent;
 
         while (current != null) {
-            if (ancestorId.equals(current.getId())) {
-                return true;
+
+            // 不允許自己成為自己的上層分類
+            if (current.getId().equals(category.getId())) {
+                throw new IllegalArgumentException(
+                        "不可將自己或自己的下層分類設為上層分類"
+                );
             }
 
+            // 持續往上尋找
             current = current.getParent();
         }
-
-        return false;
-    }
-
-    // 判斷分類是否啟用且未軟刪除
-    private boolean isAvailable(ProductCategory category) {
-        return category.getStatus() != null
-                && category.getStatus() == 1
-                && category.getDeletedAt() == null;
     }
 }

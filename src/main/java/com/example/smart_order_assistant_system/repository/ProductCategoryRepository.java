@@ -39,4 +39,55 @@ public interface ProductCategoryRepository
     */
     // List<ProductCategory> findByNameAndParentIsNull(String name);
 
+    // 查詢指定 ID 的啟用分類
+    Optional<ProductCategory> findByIdAndStatusAndDeletedAtIsNull(
+            Long id,
+            Byte status
+    );
+
+    // 查詢啟用且未刪除的最上層分類
+    List<ProductCategory> findByParentIsNullAndStatusAndDeletedAtIsNull(
+            Byte status
+    );
+
+    // 查詢指定上層分類底下的啟用子分類
+    List<ProductCategory> findByParent_IdAndStatusAndDeletedAtIsNull(
+            Long parentId,
+            Byte status
+    );
+
+    // 搜尋啟用且未刪除的分類
+    List<ProductCategory> findByNameContainingIgnoreCaseAndStatusAndDeletedAtIsNull(
+            String name,
+            Byte status
+    );
+
+    // 檢查最上層分類名稱是否重複
+    boolean existsByNameAndParentIsNullAndStatusAndDeletedAtIsNull(
+            String name,
+            Byte status
+    );
+
+    // 檢查子分類名稱是否重複
+    boolean existsByNameAndParent_IdAndStatusAndDeletedAtIsNull(
+            String name,
+            Long parentId,
+            Byte status
+    );
+
+    // 修改最上層分類時，檢查其他分類是否已有相同名稱
+    boolean existsByNameAndParentIsNullAndStatusAndDeletedAtIsNullAndIdNot(
+            String name,
+            Byte status,
+            Long id
+    );
+
+    // 修改子分類時，檢查同一個上層分類底下是否有其他同名分類
+    boolean existsByNameAndParent_IdAndStatusAndDeletedAtIsNullAndIdNot(
+            String name,
+            Long parentId,
+            Byte status,
+            Long id
+    );
+
 }
