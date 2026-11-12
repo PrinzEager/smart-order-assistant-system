@@ -128,7 +128,7 @@ public class ProductController {
 
     Product product = request.toEntity();
 
-    Product savedProduct = productService.createProduct(product);
+    Product savedProduct = productService.createProduct(product, request.getCategoryId());
 
     return new ProductResponse(savedProduct);
 }
@@ -146,7 +146,7 @@ public class ProductController {
 
         Product product = request.toEntity();
 
-        Product updatedProduct = productService.updateProduct(id, product);
+        Product updatedProduct = productService.updateProduct(id, product, request.getCategoryId());
 
         return new ProductResponse(updatedProduct);
     }

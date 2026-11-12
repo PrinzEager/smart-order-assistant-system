@@ -85,9 +85,6 @@ public class ProductCategoryService {
 
     /**
      * 新增商品分類
-     * 新增商品分類時，null 代表最上層分類，否則為子分類
-     * 新增商品分類時，若上層分類(直接輸入id的情況下)不存在，會拋出 IllegalArgumentException
-     * 新增商品分類時，若同一個上層分類底下已有相同名稱的分類，會拋出 IllegalArgumentException
      */
     @Transactional
     public ProductCategory createCategory(ProductCategoryRequest request) {
@@ -96,7 +93,8 @@ public class ProductCategoryService {
 
         String name = request.getName().trim();
 
-        // 取得上層分類
+        // 取得有效的上層分類
+        // 如果有指定 parentId，只允許指定第一層分類
         ProductCategory parent = getValidParent(request.getParentId());
 
         // 檢查分類名稱是否重複
@@ -135,6 +133,9 @@ public class ProductCategoryService {
 
         // 取得新的上層分類
         ProductCategory parent = getValidParent(request.getParentId());
+
+        // 檢查修改後是否仍維持原本的分類層級
+        validateCategoryLevel(category, parent);
 
         // 檢查是否會產生循環關聯
         validateHierarchy(category, parent);
@@ -186,8 +187,11 @@ public class ProductCategoryService {
             );
         }
 
-        // 有商品使用此分類時，不允許刪除
-        if (!productRepository.findByCategory_Id(categoryId).isEmpty()) {
+        // 有未軟刪除的商品使用此分類時，不允許刪除
+        if (!productRepository
+                .findByCategory_IdAndDeletedAtIsNull(categoryId)
+                .isEmpty()) {
+
             throw new IllegalArgumentException(
                     "此分類仍有商品使用，無法刪除"
             );
@@ -222,6 +226,14 @@ public class ProductCategoryService {
 
     /**
      * 取得有效的上層分類
+     *
+     * null：代表建立第一層分類
+     *
+     * 有指定 ID：
+     * 1. 父分類必須存在
+     * 2. 父分類必須啟用
+     * 3. 父分類必須未刪除
+     * 4. 父分類必須是第一層分類
      */
     private ProductCategory getValidParent(Long parentId) {
 
@@ -230,7 +242,36 @@ public class ProductCategoryService {
             return null;
         }
 
-        return findCategoryById(parentId);
+        // 查詢父分類，確認存在、啟用且未刪除
+        ProductCategory parent = findCategoryById(parentId);
+
+        // 父分類本身不能有父分類
+        // 確保只能建立第二層分類
+        if (parent.getParent() != null) {
+            throw new IllegalArgumentException(
+                    "只能選擇第一層分類作為上層分類，不允許建立第三層分類"
+            );
+        }
+
+        return parent;
+    }
+
+    /**
+     * 檢查修改分類後是否維持原本的分類層級
+     */
+    private void validateCategoryLevel(
+            ProductCategory category,
+            ProductCategory newParent) {
+
+        boolean originalIsRoot = category.getParent() == null;
+        boolean newIsRoot = newParent == null;
+
+        // 第一層與第二層分類不能互相轉換
+        if (originalIsRoot != newIsRoot) {
+            throw new IllegalArgumentException(
+                    "不允許變更分類層級，第一層必須維持第一層，第二層必須維持第二層"
+            );
+        }
     }
 
     /**

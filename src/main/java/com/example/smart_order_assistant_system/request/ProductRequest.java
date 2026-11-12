@@ -6,6 +6,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import com.example.smart_order_assistant_system.entity.Product;
@@ -34,6 +35,11 @@ public class ProductRequest {
     @NotBlank(message = "商品名稱不可為空")
     @Size(max = 100, message = "商品名稱最多 100 個字元")
     private String name;
+
+    // 商品分類編號
+    @NotNull(message = "商品分類不可為空")
+    @Positive(message = "商品分類 ID 必須大於 0")
+    private Long categoryId;
 
     // 商品售價
     @NotNull(message = "商品售價不可為空")

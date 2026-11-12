@@ -10,16 +10,23 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.example.smart_order_assistant_system.entity.Product;
 import com.example.smart_order_assistant_system.repository.ProductRepository;
+import com.example.smart_order_assistant_system.entity.ProductCategory;
+import com.example.smart_order_assistant_system.repository.ProductCategoryRepository;
 
 @Service
 @Transactional(readOnly = true)
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final ProductCategoryRepository categoryRepository;
 
-    // 建構子注入：讓 Spring 將 ProductRepository 傳入
-    public ProductService(ProductRepository productRepository) {
+    // 建構子注入：讓 Spring 將 Repository 傳入
+    public ProductService(
+            ProductRepository productRepository, 
+            ProductCategoryRepository categoryRepository) {
+        
         this.productRepository = productRepository;
+        this.categoryRepository = categoryRepository;
     }
 
     // 查詢所有啟用且未軟刪除的商品
@@ -137,8 +144,15 @@ public class ProductService {
 
     // 新增商品
     @Transactional
-    public Product createProduct(Product product) {
+    public Product createProduct(Product product, Long categoryId) {
+
         validateProduct(product);
+
+        // 驗證商品分類是否存在、啟用且未軟刪除
+        ProductCategory category = findAvailableCategory(categoryId);
+
+        // 設定商品分類關聯
+        product.setCategory(category);
 
         // 商品代碼不可重複
         if (productRepository.findBySku(product.getSku()).isPresent()) {
@@ -160,29 +174,40 @@ public class ProductService {
 
     // 修改商品
     @Transactional
-    public Product updateProduct(Long id, Product newData) {
+    public Product updateProduct(
+            Long id,
+            Product newData,
+            Long categoryId) {
+
         validateProduct(newData);
 
+        // 確認商品是否存在、啟用且未軟刪除
         Product existingProduct = findProductById(id);
+
+        // 驗證新的商品分類
+        ProductCategory category = findAvailableCategory(categoryId);
 
         // 如果修改商品代碼，檢查是否與其他商品重複
         productRepository.findBySku(newData.getSku())
                 .filter(other -> !other.getId().equals(id))
                 .ifPresent(other -> {
                     throw new IllegalArgumentException(
-                            "已存在商品代碼："
-                                    + newData.getSku()
+                            "已存在商品代碼：" + newData.getSku()
                     );
                 });
 
+        // 更新商品分類
+        existingProduct.setCategory(category);
+
         // 更新商品基本資料
-        existingProduct.setCategory(newData.getCategory());
         existingProduct.setSku(newData.getSku());
         existingProduct.setBarcode(newData.getBarcode());
+
         // 只有當新圖片網址不為 null 時，才更新圖片
         if (newData.getImageUrl() != null) {
             existingProduct.setImageUrl(newData.getImageUrl());
         }
+
         existingProduct.setName(newData.getName());
         existingProduct.setPrice(newData.getPrice());
         existingProduct.setCostPrice(newData.getCostPrice());
@@ -225,6 +250,64 @@ public class ProductService {
         return product.getStatus() != null
                 && product.getStatus() == 1
                 && product.getDeletedAt() == null;
+    }
+    
+    /**
+     * 查詢並驗證商品分類
+     *
+     * 商品只能使用第二層分類
+     */
+    private ProductCategory findAvailableCategory(Long categoryId) {
+
+        // 1. 檢查分類 ID
+        if (categoryId == null || categoryId <= 0) {
+            throw new IllegalArgumentException(
+                    "商品分類不可為空或無效"
+            );
+        }
+
+        // 2. 查詢啟用且未軟刪除的商品分類
+        ProductCategory category = categoryRepository
+                .findByIdAndStatusAndDeletedAtIsNull(
+                        categoryId,
+                        (byte) 1
+                )
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "商品分類不存在或已停用"
+                        )
+                );
+
+        // 3. 確認商品分類必須有父分類
+        // 沒有父分類代表是第一層，不能直接指定給商品
+        if (category.getParent() == null) {
+            throw new IllegalArgumentException(
+                    "商品只能指定第二層分類，不能使用第一層分類"
+            );
+        }
+
+        // 4. 取得父分類
+        ProductCategory parent = category.getParent();
+
+        // 5. 確認父分類必須是第一層
+        // 如果父分類還有父分類，代表目前分類已經是第三層以上
+        if (parent.getParent() != null) {
+            throw new IllegalArgumentException(
+                    "商品分類結構錯誤，只允許使用第二層分類"
+            );
+        }
+
+        // 6. 確認父分類必須啟用且未軟刪除
+        if (parent.getStatus() == null
+                || parent.getStatus() != 1
+                || parent.getDeletedAt() != null) {
+
+            throw new IllegalArgumentException(
+                    "商品所屬的上層分類不存在或已停用"
+            );
+        }
+
+        return category;
     }
 
     // 驗證商品必要欄位與數值

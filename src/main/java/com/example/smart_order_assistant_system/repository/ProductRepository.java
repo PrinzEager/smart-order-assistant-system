@@ -40,6 +40,10 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     // 依分類編號查詢商品
     List<Product> findByCategory_Id(Long categoryId);
 
+    // 依分類編號查詢尚未軟刪除的商品
+    // 不論商品啟用或停用，只要尚未軟刪除都會被查出
+    List<Product> findByCategory_IdAndDeletedAtIsNull(Long categoryId);
+
     // Page 版本：分頁查詢
     Page<Product> findByStatusAndDeletedAtIsNull(
             Byte status,
