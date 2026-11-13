@@ -134,11 +134,11 @@ public class ProductCategoryService {
         // 取得新的上層分類
         ProductCategory parent = getValidParent(request.getParentId());
 
-        // 檢查修改後是否仍維持原本的分類層級
-        validateCategoryLevel(category, parent);
-
         // 檢查是否會產生循環關聯
         validateHierarchy(category, parent);
+
+        // 檢查修改後是否仍維持原本的分類層級
+        validateCategoryLevel(category, parent);
 
         // 檢查名稱是否與其他分類重複
         checkDuplicateNameForUpdate(name, parent, categoryId);
@@ -160,7 +160,9 @@ public class ProductCategoryService {
         ProductCategory category = findCategoryById(categoryId);
 
         // 有子分類時，不允許直接停用
-        if (!categoryRepository.findByParent_Id(categoryId).isEmpty()) {
+        if (!categoryRepository
+                .findByParent_IdAndDeletedAtIsNull(categoryId)
+                .isEmpty()) {
             throw new IllegalArgumentException(
                     "此分類底下仍有子分類，請先處理子分類"
             );
@@ -181,7 +183,9 @@ public class ProductCategoryService {
         ProductCategory category = findCategoryById(categoryId);
 
         // 有子分類時，不允許刪除
-        if (!categoryRepository.findByParent_Id(categoryId).isEmpty()) {
+        if (!categoryRepository
+                .findByParent_IdAndDeletedAtIsNull(categoryId)
+                .isEmpty()) {
             throw new IllegalArgumentException(
                     "此分類底下仍有子分類，無法刪除"
             );

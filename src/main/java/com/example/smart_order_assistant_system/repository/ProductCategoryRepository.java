@@ -32,6 +32,11 @@ public interface ProductCategoryRepository
     // 依分類名稱查詢單一分類（名稱必須唯一才適合使用 Optional）
     Optional<ProductCategory> findByNameAndParentIsNull(String name);
 
+    // 查詢指定上層分類底下尚未軟刪除的子分類
+    List<ProductCategory> findByParent_IdAndDeletedAtIsNull(
+            Long parentId
+    );
+
     /*
       只適用於查詢最上層分類，而且假設同名的最上層分類不會重複
       如果資料庫沒有設定唯一限制，實際上仍可能查到多筆資料
