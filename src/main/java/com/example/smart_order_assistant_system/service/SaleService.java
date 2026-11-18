@@ -2,10 +2,12 @@ package com.example.smart_order_assistant_system.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
+// import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import com.example.smart_order_assistant_system.entity.Product;
 import com.example.smart_order_assistant_system.entity.Sale;
@@ -32,8 +34,8 @@ public class SaleService {
     // ========================================
 
     // 查詢所有尚未軟刪除的銷售紀錄
-    public List<Sale> findAllSales() {
-        return saleRepository.findByDeletedAtIsNull();
+    public Page<Sale> findAllSales(Pageable pageable) {
+        return saleRepository.findByDeletedAtIsNull(pageable);
     }
 
     // 依銷售紀錄 ID 查詢
@@ -49,32 +51,39 @@ public class SaleService {
     }
 
     // 查詢指定商品的所有有效銷售紀錄
-    public List<Sale> findSalesByProduct(Long productId) {
+    public Page<Sale> findSalesByProduct(
+            Long productId,
+            Pageable pageable) {
+
         validateProductId(productId);
 
         return saleRepository
-                .findByProduct_IdAndDeletedAtIsNull(productId);
+                .findByProduct_IdAndDeletedAtIsNull(
+                        productId,
+                        pageable);
     }
 
     // 查詢指定時間區間內的有效銷售紀錄
-    public List<Sale> findSalesByDateRange(
+    public Page<Sale> findSalesByDateRange(
             LocalDateTime startDateTime,
-            LocalDateTime endDateTime) {
+            LocalDateTime endDateTime,
+            Pageable pageable) {
 
         validateDateRange(startDateTime, endDateTime);
 
         return saleRepository
-                .findByDateTimeBetween(startDateTime, endDateTime)
-                .stream()
-                .filter(sale -> sale.getDeletedAt() == null)
-                .toList();
+                .findByDateTimeBetweenAndDeletedAtIsNull(
+                        startDateTime,
+                        endDateTime,
+                        pageable);
     }
 
     // 查詢指定商品在指定時間區間內的有效銷售紀錄
-    public List<Sale> findSalesByProductAndDateRange(
+    public Page<Sale> findSalesByProductAndDateRange(
             Long productId,
             LocalDateTime startDateTime,
-            LocalDateTime endDateTime) {
+            LocalDateTime endDateTime,
+            Pageable pageable) {
 
         validateProductId(productId);
         validateDateRange(startDateTime, endDateTime);
@@ -83,7 +92,8 @@ public class SaleService {
                 .findByProduct_IdAndDateTimeBetweenAndDeletedAtIsNull(
                         productId,
                         startDateTime,
-                        endDateTime);
+                        endDateTime,
+                        pageable);
     }
 
     // ========================================
