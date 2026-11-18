@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -200,6 +201,27 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(error);
+    }
+
+    // ==========================================
+    // 9.處理 HTTP 請求方法不支援
+    // ==========================================
+    // 例如：
+    // API 只接受 POST，卻使用 GET 呼叫
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, String>> handleMethodNotSupportedException(
+            HttpRequestMethodNotSupportedException ex) {
+
+        Map<String, String> error = new HashMap<>();
+
+        error.put(
+                "message",
+                "不支援此 HTTP 請求方法，請確認 API 使用的請求方式"
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.METHOD_NOT_ALLOWED)
                 .body(error);
     }
 }
