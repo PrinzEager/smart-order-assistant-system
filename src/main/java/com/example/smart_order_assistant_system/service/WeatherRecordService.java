@@ -5,24 +5,32 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.smart_order_assistant_system.entity.WeatherRecord;
 import com.example.smart_order_assistant_system.repository.WeatherRecordRepository;
+import com.example.smart_order_assistant_system.response.WeatherObservationResponse;
 
 @Service
 @Transactional(readOnly = true)
 public class WeatherRecordService {
 
     private final WeatherRecordRepository weatherRecordRepository;
+    // 注入天氣觀測 Service，負責取得氣象署資料
+    private final WeatherObservationService weatherObservationService;
 
-    // 建構子注入 Repository
+    // 建構子注入 Repository 與 WeatherObservationService
     public WeatherRecordService(
-            WeatherRecordRepository weatherRecordRepository) {
+            WeatherRecordRepository weatherRecordRepository,
+            WeatherObservationService weatherObservationService) {
+
         this.weatherRecordRepository = weatherRecordRepository;
+        this.weatherObservationService = weatherObservationService;
     }
+    
 
     // ========================================
     // 1. 查詢功能
@@ -132,7 +140,131 @@ public class WeatherRecordService {
     }
 
     // ========================================
-    // 2. 新增天氣紀錄
+    // 2. 從氣象署 API 收集並儲存天氣資料
+    // ========================================
+
+    /**
+     * 根據測站 ID 取得最新天氣觀測資料，並儲存至資料庫
+     *
+     * @param stationId 氣象測站 ID
+     * @return 儲存完成的天氣紀錄
+     */
+    @Transactional
+    public WeatherRecord collectWeatherRecord(String stationId) {
+
+        // 檢查測站 ID 是否為空
+        if (stationId == null || stationId.isBlank()) {
+            throw new IllegalArgumentException("測站 ID 不可為空");
+        }
+
+        // 呼叫 WeatherObservationService 取得氣象署觀測資料
+        WeatherObservationResponse observation =
+                weatherObservationService.getObservation(stationId.trim())
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "找不到指定測站的天氣觀測資料"));
+
+        // 取得並整理測站 ID
+        String actualStationId = observation.getStationId();
+
+        if (actualStationId == null || actualStationId.isBlank()) {
+            throw new IllegalArgumentException("觀測資料缺少測站 ID");
+        }
+
+        actualStationId = actualStationId.trim();
+        // 確認觀測時間是否存在
+        if (observation.getObservationTime() == null) {
+            throw new IllegalArgumentException(
+                    "氣象觀測時間不存在，無法儲存天氣紀錄");
+        }
+
+        // 確認測站名稱是否存在
+        if (observation.getStationName() == null
+                || observation.getStationName().isBlank()) {
+            throw new IllegalArgumentException("測站名稱不可為空");
+        }
+
+        // 取得縣市名稱
+        String countyName = observation.getCountyName();
+
+        // 取得鄉鎮市區名稱
+        String townName = observation.getTownName();
+
+        // 確認地理資訊完整
+        if (countyName == null || countyName.isBlank()
+                || townName == null || townName.isBlank()) {
+            throw new IllegalArgumentException("測站缺少完整地理資訊");
+        }
+
+        // 組合完整地點
+        String location = countyName.trim() + townName.trim();
+
+        // 確認觀測地點是否完整
+        validateLocation(location);
+
+        // 取得實際觀測時間
+        LocalDateTime observationTime =
+                observation.getObservationTime();
+
+        // 從觀測時間取得日期
+        LocalDate recordDate = observationTime.toLocalDate();
+
+        // 從觀測時間取得時間
+        LocalTime recordTime = observationTime.toLocalTime();
+
+        // 檢查資料庫是否已經存在相同測站及觀測時間
+        Optional<WeatherRecord> existingRecord =
+                weatherRecordRepository
+                        .findByStationIdAndRecordDateAndRecordTime(
+                                actualStationId,
+                                recordDate,
+                                recordTime);
+
+        // 如果已經存在，直接回傳原本的紀錄
+        if (existingRecord.isPresent()) {
+            return existingRecord.get();
+        }
+
+        // 建立新的 WeatherRecord Entity
+        WeatherRecord record = new WeatherRecord();
+
+        // 設定測站 ID
+        record.setStationId(actualStationId);
+
+        // 設定測站名稱
+        record.setStationName(observation.getStationName());
+
+        // 設定觀測日期及時間
+        record.setRecordDate(recordDate);
+        record.setRecordTime(recordTime);
+
+        // 設定觀測地點
+        record.setLocation(location);
+
+        // 設定氣溫
+        record.setTemperature(observation.getAirTemperature());
+
+        // 設定相對濕度
+        record.setHumidity(observation.getRelativeHumidity());
+
+        // 設定降雨量
+        record.setRainfall(observation.getPrecipitation());
+
+        // 設定天氣狀況
+        record.setWeatherCondition(observation.getWeather());
+
+        // 設定資料建立時間
+        record.setCreatedAt(LocalDateTime.now());
+
+        // 執行原本的資料驗證
+        validateWeatherRecord(record);
+
+        // 將資料寫入 MySQL
+        return weatherRecordRepository.save(record);
+    }
+
+    // ========================================
+    // 3. 新增天氣紀錄
     // ========================================
 
     @Transactional
@@ -144,11 +276,6 @@ public class WeatherRecordService {
         // 移除地點前後的空白
         record.setLocation(record.getLocation().trim());
 
-        // 未指定觀測時間時，使用中午 12:00
-        if (record.getRecordTime() == null) {
-            record.setRecordTime(LocalTime.NOON);
-        }
-
         // 設定資料建立時間
         record.setCreatedAt(now);
 
@@ -156,13 +283,30 @@ public class WeatherRecordService {
     }
 
     // ========================================
-    // 3. 私有驗證方法
+    // 4. 私有驗證方法
     // ========================================
 
     // 驗證天氣紀錄基本資料
     private void validateWeatherRecord(WeatherRecord record) {
         if (record == null) {
             throw new IllegalArgumentException("天氣紀錄不可為空");
+        }
+
+        // 觀測時間為必填欄位
+        if (record.getRecordTime() == null) {
+            throw new IllegalArgumentException("觀測時間不可為空");
+        }
+
+        // 測站 ID 為必填欄位
+        if (record.getStationId() == null
+                || record.getStationId().isBlank()) {
+            throw new IllegalArgumentException("測站 ID 不可為空");
+        }
+
+        // 測站名稱為必填欄位
+        if (record.getStationName() == null
+                || record.getStationName().isBlank()) {
+            throw new IllegalArgumentException("測站名稱不可為空");
         }
 
         // 日期為必填欄位

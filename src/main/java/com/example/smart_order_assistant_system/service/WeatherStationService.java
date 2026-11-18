@@ -6,9 +6,13 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.example.smart_order_assistant_system.client.CwaApiClient;
 import com.example.smart_order_assistant_system.response.WeatherStationResponse;
+
+import com.example.smart_order_assistant_system.entity.WeatherStation;
+import com.example.smart_order_assistant_system.repository.WeatherStationRepository;
 
 import lombok.RequiredArgsConstructor;
 import tools.jackson.databind.JsonNode;
@@ -19,6 +23,8 @@ public class WeatherStationService {
 
     // 注入中央氣象署 API Client
     private final CwaApiClient cwaApiClient;
+    // 注入測站資料 Repository
+    private final WeatherStationRepository weatherStationRepository;
 
     /**
      * 取得所有不重複的縣市名稱
@@ -183,6 +189,103 @@ public class WeatherStationService {
         }
 
         return result;
+    }
+
+    /**
+     * 將指定測站儲存到 MySQL
+     *
+     * @param stationId 中央氣象署測站編號
+     * @return 儲存後的測站資料
+     */
+    @Transactional
+    public WeatherStation saveStation(String stationId) {
+
+        // 檢查測站編號是否為空白
+        if (stationId == null || stationId.isBlank()) {
+            throw new IllegalArgumentException("測站編號不可為空");
+        }
+
+        // 檢查資料庫是否已經存在該測站
+        // 如果存在就直接回傳，避免重複新增
+        WeatherStation existingStation =
+                weatherStationRepository.findById(stationId.trim())
+                        .orElse(null);
+
+        if (existingStation != null) {
+            return existingStation;
+        }
+
+        // 向中央氣象署取得所有測站資料
+        JsonNode stations = cwaApiClient.getStations();
+
+        // 確認測站資料存在且為陣列
+        if (stations == null || !stations.isArray()) {
+            throw new IllegalStateException("無法取得中央氣象署測站資料");
+        }
+
+        // 尋找使用者指定的測站
+        for (JsonNode station : stations) {
+
+            // 取得測站編號
+            String currentStationId =
+                    station.path("StationId").stringValue();
+
+            // 比對測站編號
+            if (!stationId.trim().equals(currentStationId.trim())) {
+                continue;
+            }
+
+            // 取得測站地理資訊
+            JsonNode geoInfo = station.path("GeoInfo");
+
+            // 取得縣市名稱
+            String countyName =
+                    geoInfo.path("CountyName").stringValue();
+
+            // 取得鄉鎮名稱
+            String townName =
+                    geoInfo.path("TownName").stringValue();
+
+            // 取得測站緯度
+            Double latitude = getWgs84Coordinate(
+                    geoInfo, "StationLatitude");
+
+            // 取得測站經度
+            Double longitude = getWgs84Coordinate(
+                    geoInfo, "StationLongitude");
+
+            // 建立測站 Entity
+            WeatherStation weatherStation = new WeatherStation();
+
+            // 設定測站編號
+            weatherStation.setStationId(currentStationId);
+
+            // 設定測站名稱
+            weatherStation.setStationName(
+                    station.path("StationName").stringValue());
+
+            // 設定縣市名稱
+            weatherStation.setCountyName(countyName);
+
+            // 設定鄉鎮名稱
+            weatherStation.setTownName(townName);
+
+            // 設定測站緯度
+            weatherStation.setLatitude(latitude);
+
+            // 設定測站經度
+            weatherStation.setLongitude(longitude);
+
+            // 預設啟用天氣資料收集
+            weatherStation.setEnabled(true);
+
+            // 將測站資料儲存到 MySQL
+            return weatherStationRepository.save(weatherStation);
+        }
+
+        // 找不到指定測站
+        throw new IllegalArgumentException(
+                "中央氣象署不存在此測站：" + stationId);
     }
 
     /**

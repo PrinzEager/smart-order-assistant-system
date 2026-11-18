@@ -11,14 +11,27 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-
+import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
 @Entity
-@Table(name = "weather_records")
+// 設定資料表名稱及唯一索引
+@Table(
+    name = "weather_records",
+    uniqueConstraints = {
+        @UniqueConstraint(
+            name = "uk_weather_station_observation",
+            columnNames = {
+                "station_id",
+                "record_date",
+                "record_time"
+            }
+        )
+    }
+)
 public class WeatherRecord {
 
     // 天氣紀錄編號（主鍵）
@@ -33,7 +46,8 @@ public class WeatherRecord {
 
     // 天氣紀錄時間
     @Column(name = "record_time", nullable = false)
-    private LocalTime recordTime = LocalTime.NOON;
+    // 天氣觀測時間，由氣象署 API 實際回傳
+    private LocalTime recordTime;
 
     // 氣溫，單位為攝氏度
     @Column(name = "temperature", precision = 5, scale = 2)
@@ -54,6 +68,14 @@ public class WeatherRecord {
     // 天氣觀測地點
     @Column(name = "location", nullable = false, length = 100)
     private String location;
+
+    // 氣象測站 ID，例如 C0V750
+    @Column(name = "station_id", nullable = false, length = 20)
+    private String stationId;
+
+    // 氣象測站名稱
+    @Column(name = "station_name", nullable = false, length = 50)
+    private String stationName;
 
     // 天氣資料建立時間
     @Column(name = "created_at", nullable = false, updatable = false)

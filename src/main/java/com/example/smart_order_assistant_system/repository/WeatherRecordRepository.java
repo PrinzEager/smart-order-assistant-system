@@ -1,7 +1,7 @@
 package com.example.smart_order_assistant_system.repository;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,5 +46,13 @@ public interface WeatherRecordRepository
     Optional<WeatherRecord> findFirstByRecordDateAndLocationOrderByCreatedAtDesc(
             LocalDate recordDate,
             String location
+    );
+
+    // 依測站 ID、觀測日期及時間查詢紀錄
+
+    Optional<WeatherRecord> findByStationIdAndRecordDateAndRecordTime(
+            String stationId,
+            LocalDate recordDate,
+            LocalTime recordTime
     );
 }
