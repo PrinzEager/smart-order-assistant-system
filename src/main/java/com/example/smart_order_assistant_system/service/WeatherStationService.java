@@ -289,6 +289,47 @@ public class WeatherStationService {
     }
 
     /**
+     * 查詢所有已啟用的測站
+     *
+     * @return 所有 enabled = true 的測站清單
+     */
+    @Transactional(readOnly = true)
+    public List<WeatherStation> getEnabledStations() {
+
+        // 從資料庫查詢所有已啟用的測站
+        return weatherStationRepository.findByEnabledTrue();
+    }
+
+    /**
+     * 修改指定測站的啟用狀態
+     *
+     * @param stationId 測站編號
+     * @param enabled 是否啟用
+     * @return 修改後的測站資料
+     */
+    @Transactional
+    public WeatherStation updateStationEnabled(
+            String stationId, boolean enabled) {
+
+        // 檢查測站編號是否為空白
+        if (stationId == null || stationId.isBlank()) {
+            throw new IllegalArgumentException("測站編號不可為空");
+        }
+
+        // 根據測站編號查詢資料庫中的測站
+        WeatherStation station = weatherStationRepository
+                .findById(stationId.trim())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "找不到指定測站：" + stationId));
+
+        // 修改測站啟用狀態
+        station.setEnabled(enabled);
+
+        // 儲存修改後的測站資料
+        return weatherStationRepository.save(station);
+    }
+
+    /**
      * 取得測站的 WGS84 座標
      *
      * @param geoInfo 測站地理資訊

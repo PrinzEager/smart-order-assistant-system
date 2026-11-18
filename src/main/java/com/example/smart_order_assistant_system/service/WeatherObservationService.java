@@ -36,9 +36,16 @@ public class WeatherObservationService {
         // 取得中央氣象署原始資料
         JsonNode stations = cwaApiClient.getStations();
 
-        // 確認資料存在且為陣列
-        if (stations == null || !stations.isArray()) {
-            return Optional.empty();
+        // 確認 API 回傳資料存在
+        if (stations == null) {
+            throw new IllegalStateException(
+                    "中央氣象署 API 未回傳測站資料");
+        }
+
+        // 確認 API 回傳資料格式為陣列
+        if (!stations.isArray()) {
+            throw new IllegalStateException(
+                    "中央氣象署 API 回傳的測站資料格式錯誤");
         }
 
         // 逐筆尋找指定測站
@@ -100,7 +107,11 @@ public class WeatherObservationService {
                 } catch (java.time.format.DateTimeParseException e) {
 
                     // 時間格式錯誤時保留 null，不影響其他天氣資料
-                    response.setObservationTime(null);
+                    throw new IllegalStateException(
+                            "測站 " + currentStationId
+                            + " 的觀測時間格式錯誤：" + dateTime,
+                            e
+                    );
                 }
             }
 
