@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -80,7 +81,32 @@ public class GlobalExceptionHandler {
     }
 
     // ==========================================
-    // 4. 處理資料衝突的例外
+    // 4. 處理缺少必要的 Request Parameter
+    // ==========================================
+    // 例如：
+    // GET /api/weather-stations?county=高雄市
+    // 缺少必要的 town 參數
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, String>> handleMissingParameterException(
+            MissingServletRequestParameterException ex) {
+
+        Map<String, String> error = new HashMap<>();
+
+        // 取得缺少的參數名稱
+        String parameterName = ex.getParameterName();
+
+        error.put(
+                "message",
+                "缺少必要參數：" + parameterName
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(error);
+    }
+
+    // ==========================================
+    // 5. 處理資料衝突的例外
     // ==========================================
     // 例如：
     // 同一父分類下商品分類名稱重複
@@ -103,7 +129,7 @@ public class GlobalExceptionHandler {
     }
 
     // ==========================================
-    // 5. 處理未預期的系統錯誤
+    // 6. 處理未預期的系統錯誤
     // ==========================================
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleGeneralException(
