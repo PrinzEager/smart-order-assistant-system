@@ -1,6 +1,7 @@
 package com.example.smart_order_assistant_system.exception;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -33,7 +34,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleValidationException(
             MethodArgumentNotValidException ex) {
 
-        Map<String, String> errors = new HashMap<>();
+        Map<String, String> errors = new LinkedHashMap<>();
 
         // 取得所有驗證失敗的欄位及錯誤訊息
         ex.getBindingResult().getFieldErrors().forEach(error -> {

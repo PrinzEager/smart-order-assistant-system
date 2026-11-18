@@ -76,6 +76,10 @@ public class WeatherStationService {
      */
     public List<String> getTowns(String county) {
 
+        // 檢查縣市名稱是否為空
+        if (county == null || county.isBlank()) {
+            return new ArrayList<>();
+        }
         // 取得中央氣象署所有測站資料
         JsonNode stations = cwaApiClient.getStations();
 
