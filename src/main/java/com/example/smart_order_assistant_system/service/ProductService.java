@@ -233,14 +233,40 @@ public class ProductService {
         return productRepository.save(product);
     }
 
-    // 軟刪除商品：保留資料並記錄刪除時間
+    // 軟刪除商品：只有啟用中的商品可以刪除
     @Transactional
     public Product deleteProduct(Long id) {
-        Product product = findProductById(id);
+
+        // 1. 先確認商品是否存在
+        Product product = productRepository.findById(id)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "找不到商品，商品 ID：" + id
+                        )
+                );
+
+        // 2. 檢查商品是否已經軟刪除
+        if (product.getDeletedAt() != null) {
+            throw new IllegalArgumentException(
+                    "商品已經刪除，不可重複刪除"
+            );
+        }
+
+        // 3. 檢查商品是否為啟用狀態
+        if (product.getStatus() == null
+                || product.getStatus() != 1) {
+
+            throw new IllegalArgumentException(
+                    "停用商品不可刪除，請確認商品狀態"
+            );
+        }
+
+        // 4. 執行軟刪除
+        LocalDateTime now = LocalDateTime.now();
 
         product.setStatus((byte) 0);
-        product.setDeletedAt(LocalDateTime.now());
-        product.setUpdatedAt(LocalDateTime.now());
+        product.setDeletedAt(now);
+        product.setUpdatedAt(now);
 
         return productRepository.save(product);
     }
