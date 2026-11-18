@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import com.example.smart_order_assistant_system.entity.Supplier;
 
@@ -14,6 +16,13 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
 
     // 依供應商名稱進行模糊搜尋，不區分英文大小寫
     List<Supplier> findByNameContainingIgnoreCase(String name);
+
+    // 依供應商名稱搜尋（分頁）
+    Page<Supplier> findByNameContainingIgnoreCaseAndStatusAndDeletedAtIsNull(
+            String name,
+            Byte status,
+            Pageable pageable
+    );
 
     // 依供應商電話查詢
     List<Supplier> findByPhone(String phone);
@@ -32,9 +41,17 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
     // 查詢所有啟用且尚未軟刪除的供應商
     List<Supplier> findByStatusAndDeletedAtIsNull(Byte status);
 
+    // 查詢所有啟用且未軟刪除的供應商（分頁）
+    Page<Supplier> findByStatusAndDeletedAtIsNull(
+            Byte status,
+            Pageable pageable
+    );
+
     // 查詢所有尚未軟刪除的供應商
     List<Supplier> findByDeletedAtIsNull();
 
     // 依供應商編號查詢尚未軟刪除的資料
     Optional<Supplier> findByIdAndDeletedAtIsNull(Long id);
+
+
 }

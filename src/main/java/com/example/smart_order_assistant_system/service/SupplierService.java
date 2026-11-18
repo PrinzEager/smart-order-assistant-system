@@ -5,6 +5,8 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import com.example.smart_order_assistant_system.entity.Supplier;
 import com.example.smart_order_assistant_system.repository.SupplierRepository;
@@ -77,6 +79,28 @@ public class SupplierService {
                 .filter(this::isAvailable)
                 .orElseThrow(() ->
                         new IllegalArgumentException("找不到符合的供應商"));
+    }
+
+    // 分頁查詢所有啟用且未刪除的供應商
+    public Page<Supplier> findAllSuppliers(Pageable pageable) {
+
+        return supplierRepository.findByStatusAndDeletedAtIsNull(
+                (byte) 1,
+                pageable
+        );
+    }
+
+    // 分頁搜尋供應商名稱
+    public Page<Supplier> searchSuppliers(
+            String keyword,
+            Pageable pageable) {
+
+        return supplierRepository
+                .findByNameContainingIgnoreCaseAndStatusAndDeletedAtIsNull(
+                        keyword.trim(),
+                        (byte) 1,
+                        pageable
+                );
     }
 
     // ==============================
@@ -179,7 +203,25 @@ public class SupplierService {
     }
 
     // ==============================
-    // 6. 私有輔助方法
+    // 6. 啟用功能
+    // ==============================
+
+    @Transactional
+    public Supplier activateSupplier(Long id) {
+        Supplier supplier = supplierRepository
+                .findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() ->
+                        new IllegalArgumentException("找不到供應商"));
+
+        // 更新為啟用狀態
+        supplier.setStatus((byte) 1);
+        supplier.setUpdatedAt(LocalDateTime.now());
+
+        return supplierRepository.save(supplier);
+    }
+
+    // ==============================
+    // 7. 私有輔助方法
     // ==============================
 
     // 判斷供應商是否啟用且未刪除
