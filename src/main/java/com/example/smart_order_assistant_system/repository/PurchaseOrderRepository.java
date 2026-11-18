@@ -1,6 +1,5 @@
 package com.example.smart_order_assistant_system.repository;
 
-
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;

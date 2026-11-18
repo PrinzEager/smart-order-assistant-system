@@ -1,4 +1,3 @@
-
 package com.example.smart_order_assistant_system.controller;
 
 import org.springframework.web.bind.annotation.GetMapping;

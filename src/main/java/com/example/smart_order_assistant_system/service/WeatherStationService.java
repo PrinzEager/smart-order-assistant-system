@@ -1,4 +1,3 @@
-
 package com.example.smart_order_assistant_system.service;
 
 import java.util.ArrayList;
@@ -51,7 +50,7 @@ public class WeatherStationService {
             // 確認節點存在且不是 null
             String countyName = countyNode.isMissingNode() || countyNode.isNull()
                     ? ""
-                    : countyNode.asText();
+                    : countyNode.stringValue();
 
             // 排除空白資料
             if (!countyName.isBlank()) {
@@ -97,12 +96,12 @@ public class WeatherStationService {
             // 確認縣市節點存在且不是 null
             String stationCounty = countyNode.isMissingNode() || countyNode.isNull()
                     ? ""
-                    : countyNode.asText();
+                    : countyNode.stringValue();
 
             // 確認鄉鎮節點存在且不是 null
             String townName = townNode.isMissingNode() || townNode.isNull()
                     ? ""
-                    : townNode.asText();
+                    : townNode.stringValue();
 
             // 比對縣市名稱，只處理指定縣市的測站
             if (stationCounty.trim().equals(county.trim())) {
@@ -152,8 +151,8 @@ public class WeatherStationService {
             JsonNode geoInfo = station.path("GeoInfo");
 
             // 取得縣市與鄉鎮名稱
-            String countyName = geoInfo.path("CountyName").asText();
-            String townName = geoInfo.path("TownName").asText();
+            String countyName = geoInfo.path("CountyName").stringValue();
+            String townName = geoInfo.path("TownName").stringValue();
 
             // 比對使用者指定的縣市與鄉鎮
             if (!countyName.trim().equals(county.trim())
@@ -171,8 +170,8 @@ public class WeatherStationService {
             // 建立測站 DTO
             WeatherStationResponse response =
                     new WeatherStationResponse(
-                            station.path("StationId").asText(),
-                            station.path("StationName").asText(),
+                            station.path("StationId").stringValue(),
+                            station.path("StationName").stringValue(),
                             countyName,
                             townName,
                             latitude,
@@ -208,14 +207,14 @@ public class WeatherStationService {
         for (JsonNode coordinate : coordinates) {
 
             String coordinateName =
-                    coordinate.path("CoordinateName").asText();
+                    coordinate.path("CoordinateName").stringValue();
 
             // 只使用 WGS84 座標
             if ("WGS84".equals(coordinateName)) {
 
                 // 取得指定的經度或緯度
                 String value =
-                        coordinate.path(coordinateField).asText();
+                        coordinate.path(coordinateField).stringValue();
 
                 // 排除空白資料
                 if (value.isBlank()) {

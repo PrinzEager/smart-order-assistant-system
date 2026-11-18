@@ -1,4 +1,3 @@
-
 package com.example.smart_order_assistant_system.client;
 
 import org.springframework.beans.factory.annotation.Value;

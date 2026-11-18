@@ -1,4 +1,3 @@
-
 package com.example.smart_order_assistant_system.config;
 
 import org.springframework.context.annotation.Bean;
