@@ -13,6 +13,7 @@ import com.example.smart_order_assistant_system.entity.Product;
 import com.example.smart_order_assistant_system.entity.Sale;
 import com.example.smart_order_assistant_system.repository.ProductRepository;
 import com.example.smart_order_assistant_system.repository.SaleRepository;
+import com.example.smart_order_assistant_system.exception.ResourceNotFoundException;
 
 @Service
 @Transactional(readOnly = true)
@@ -47,7 +48,7 @@ public class SaleService {
         return saleRepository.findById(id)
                 .filter(sale -> sale.getDeletedAt() == null)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("找不到銷售紀錄"));
+                        new ResourceNotFoundException("找不到銷售紀錄"));
     }
 
     // 查詢指定商品的所有有效銷售紀錄
