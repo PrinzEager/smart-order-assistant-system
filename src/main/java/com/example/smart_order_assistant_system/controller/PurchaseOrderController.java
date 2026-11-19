@@ -5,6 +5,7 @@ import java.util.List;
 
 import jakarta.validation.Valid;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,6 +18,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import com.example.smart_order_assistant_system.entity.Product;
 import com.example.smart_order_assistant_system.entity.PurchaseOrder;
@@ -51,6 +55,76 @@ public class PurchaseOrderController {
                         .map(this::convertToResponse)
                         .toList();
 
+        return ResponseEntity.ok(responses);
+    }
+
+    // ========================================
+    // 1-1. 分頁查詢訂貨單
+    // ========================================
+
+    @GetMapping("/page")
+    public ResponseEntity<Page<PurchaseOrderResponse>> findPurchaseOrdersPage(
+
+            // 頁碼，預設從第 0 頁開始
+            @RequestParam(defaultValue = "0") int page,
+
+            // 每頁筆數，預設 10 筆
+            @RequestParam(defaultValue = "10") int size,
+
+            // 排序欄位，預設依建立時間排序
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+
+            // 排序方向，預設由新到舊
+            @RequestParam(defaultValue = "DESC") String direction) {
+
+        // 檢查頁碼不可小於 0
+        if (page < 0) {
+            throw new IllegalArgumentException(
+                    "頁碼不可小於 0");
+        }
+
+        // 檢查每頁筆數必須大於 0
+        if (size <= 0) {
+            throw new IllegalArgumentException(
+                    "每頁筆數必須大於 0");
+        }
+
+        // 限制每頁最多查詢 100 筆
+        if (size > 100) {
+            throw new IllegalArgumentException(
+                    "每頁筆數不可超過 100");
+        }
+
+        // 只允許指定的欄位進行排序，避免任意欄位排序
+        if (!List.of("createdAt", "orderDate", "totalAmount", "id")
+                .contains(sortBy)) {
+            throw new IllegalArgumentException(
+                    "不支援的排序欄位");
+        }
+
+        // 將排序方向轉換成 Spring Data JPA 的 Sort.Direction
+        Sort.Direction sortDirection;
+
+        try {
+            sortDirection = Sort.Direction.fromString(direction);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "排序方向只能是 ASC 或 DESC");
+        }
+
+        // 建立分頁及排序條件
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(sortDirection, sortBy)
+        );
+
+        // 呼叫 Service 執行分頁查詢
+        Page<PurchaseOrderResponse> responses =
+                purchaseOrderService.findPurchaseOrdersPage(pageable)
+                        .map(this::convertToResponse);
+
+        // 回傳分頁查詢結果
         return ResponseEntity.ok(responses);
     }
 
@@ -175,7 +249,7 @@ public class PurchaseOrderController {
     }
 
     // ========================================
-    // 8. 修改訂貨單基本資料
+    // 8. 修改訂貨單及商品明細
     // ========================================
 
     @PutMapping("/{id}")
@@ -183,30 +257,11 @@ public class PurchaseOrderController {
             @PathVariable Long id,
             @Valid @RequestBody PurchaseOrderUpdateRequest request) {
 
-        // 建立修改用 Entity
-        PurchaseOrder newData = new PurchaseOrder();
-
-        // 有提供供應商 ID 時，才設定供應商資料
-        if (request.getSupplierId() != null) {
-
-            Supplier supplier = new Supplier();
-            supplier.setId(request.getSupplierId());
-
-            newData.setSupplier(supplier);
-        }
-
-        // 設定預計到貨日期
-        newData.setExpectedDeliveryDate(
-                request.getExpectedDeliveryDate());
-
-        // 設定訂貨備註
-        newData.setRemark(request.getRemark());
-
-        // 呼叫 Service 更新訂貨單
+        // 呼叫 Service 修改訂貨單及商品明細
         PurchaseOrder updatedOrder =
-                purchaseOrderService.updatePurchaseOrder(id, newData);
+                purchaseOrderService.updatePurchaseOrder(id, request);
 
-        // 回傳修改後的訂貨單
+        // 回傳修改後的訂貨單資料
         return ResponseEntity.ok(convertToResponse(updatedOrder));
     }
 

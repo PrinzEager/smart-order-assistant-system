@@ -20,4 +20,7 @@ public interface PurchaseOrderItemRepository
             Long purchaseOrderId,
             Long productId
     );
+
+    // 刪除指定訂貨單的所有商品明細
+    void deleteByPurchaseOrder_Id(Long purchaseOrderId);
 }

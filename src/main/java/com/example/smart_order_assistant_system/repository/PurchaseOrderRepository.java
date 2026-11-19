@@ -3,6 +3,8 @@ package com.example.smart_order_assistant_system.repository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -38,4 +40,10 @@ public interface PurchaseOrderRepository
 
     // 查詢所有未刪除的訂貨單
     List<PurchaseOrder> findByStatusAndDeletedAtIsNull(Byte status);
+
+    // 分頁查詢所有有效且未軟刪除的訂貨單
+    Page<PurchaseOrder> findByStatusAndDeletedAtIsNull(
+            Byte status,
+            Pageable pageable
+    );
 }

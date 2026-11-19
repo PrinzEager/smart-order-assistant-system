@@ -7,6 +7,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,8 @@ import com.example.smart_order_assistant_system.repository.ProductRepository;
 import com.example.smart_order_assistant_system.repository.PurchaseOrderItemRepository;
 import com.example.smart_order_assistant_system.repository.PurchaseOrderRepository;
 import com.example.smart_order_assistant_system.repository.SupplierRepository;
+import com.example.smart_order_assistant_system.request.PurchaseOrderItemRequest;
+import com.example.smart_order_assistant_system.request.PurchaseOrderUpdateRequest;
 
 @Service
 @Transactional(readOnly = true)
@@ -56,6 +60,18 @@ public class PurchaseOrderService {
 
         return purchaseOrderRepository
                 .findByStatusAndDeletedAtIsNull(ACTIVE);
+    }
+
+    // 分頁查詢所有正常且未軟刪除的訂貨單
+    public Page<PurchaseOrder> findPurchaseOrdersPage(
+            Pageable pageable) {
+
+        // 使用分頁條件查詢有效且未軟刪除的訂貨單
+        return purchaseOrderRepository
+                .findByStatusAndDeletedAtIsNull(
+                        ACTIVE,
+                        pageable
+                );
     }
 
     // 依訂貨單 ID 查詢
@@ -242,56 +258,205 @@ public class PurchaseOrderService {
     }
 
     // ========================================
-    // 3. 修改訂貨單基本資料
+    // 3. 修改訂貨單及商品明細
     // ========================================
 
     @Transactional
     public PurchaseOrder updatePurchaseOrder(
             Long id,
-            PurchaseOrder newData) {
+            PurchaseOrderUpdateRequest request) {
 
-        if (newData == null) {
-            throw new IllegalArgumentException("訂貨單資料不可為空");
+        // 檢查修改資料是否為空
+        if (request == null) {
+            throw new IllegalArgumentException(
+                    "訂貨單修改資料不可為空");
         }
 
+        // 查詢有效的訂貨單
         PurchaseOrder existing = findPurchaseOrderById(id);
 
-        // 只允許修改草稿中的訂貨單
+        // 只有草稿狀態可以修改
         if (!OrderStatus.DRAFT.equals(existing.getOrderStatus())) {
             throw new BusinessConflictException(
                     "只有 DRAFT 狀態的訂貨單可以修改");
         }
 
-        // 有提供新供應商時，檢查供應商是否有效
-        if (newData.getSupplier() != null) {
+        // ========================================
+        // I. 修改訂貨單基本資料
+        // ========================================
 
-            if (newData.getSupplier().getId() == null) {
-                throw new IllegalArgumentException(
-                        "供應商 ID 不可為空");
-            }
+        // 有提供新供應商時，確認供應商有效
+        if (request.getSupplierId() != null) {
 
             Supplier supplier = findAvailableSupplier(
-                    newData.getSupplier().getId());
+                    request.getSupplierId());
 
             existing.setSupplier(supplier);
         }
 
-        // 預計到貨日期可以設為 null
+        // 檢查預計到貨日期
         LocalDate expectedDate =
-                newData.getExpectedDeliveryDate();
+                request.getExpectedDeliveryDate();
 
         if (expectedDate != null
                 && expectedDate.isBefore(
                         existing.getOrderDate().toLocalDate())) {
+
             throw new IllegalArgumentException(
                     "預計到貨日期不可早於訂貨日期");
         }
 
-        // 更新訂貨單資料
+        // 更新預計到貨日期
         existing.setExpectedDeliveryDate(expectedDate);
+
+        // 更新訂貨備註
         existing.setRemark(
-                normalizeOptionalText(newData.getRemark()));
-        existing.setUpdatedAt(LocalDateTime.now());
+                normalizeOptionalText(request.getRemark()));
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // ========================================
+        // II. 檢查是否需要修改商品明細
+        // ========================================
+
+        List<PurchaseOrderItemRequest> newItems =
+                request.getItems();
+
+        // 沒有提供商品明細時，只修改基本資料
+        if (newItems == null) {
+
+            existing.setUpdatedAt(now);
+
+            return purchaseOrderRepository.save(existing);
+        }
+
+        // 不允許將商品明細修改成空清單
+        if (newItems.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "訂貨單至少需要一筆商品明細");
+        }
+
+        // ========================================
+        // III. 先驗證所有新商品明細
+        // ========================================
+
+        // 儲存已驗證的商品
+        List<Product> products = new java.util.ArrayList<>();
+
+        // 儲存已驗證的商品單價
+        List<BigDecimal> unitPrices = new java.util.ArrayList<>();
+
+        // 檢查是否有重複商品
+        Set<Long> productIds = new HashSet<>();
+
+        for (PurchaseOrderItemRequest item : newItems) {
+
+            // 檢查明細資料
+            if (item == null) {
+                throw new IllegalArgumentException(
+                        "訂貨明細不可為空");
+            }
+
+            if (item.getProductId() == null) {
+                throw new IllegalArgumentException(
+                        "商品編號不可為空");
+            }
+
+            if (item.getQuantity() == null
+                    || item.getQuantity() <= 0) {
+                throw new IllegalArgumentException(
+                        "訂貨數量必須大於 0");
+            }
+
+            Long productId = item.getProductId();
+
+            // 檢查同一張訂貨單是否有重複商品
+            if (!productIds.add(productId)) {
+                throw new BusinessConflictException(
+                        "同一張訂貨單不可重複新增相同商品");
+            }
+
+            // 確認商品存在、啟用且未刪除
+            Product product = findAvailableProduct(productId);
+
+            // 取得商品目前的進貨成本
+            BigDecimal unitPrice = product.getCostPrice();
+
+            // 檢查商品進貨成本
+            if (unitPrice == null) {
+                throw new BusinessConflictException(
+                        "商品「" + product.getName()
+                                + "」尚未設定進貨成本，無法修改訂貨單");
+            }
+
+            if (unitPrice.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessConflictException(
+                        "商品進貨成本不可小於 0");
+            }
+
+            // 檢查進貨成本的小數位數
+            if (unitPrice.stripTrailingZeros().scale() > 2) {
+                throw new BusinessConflictException(
+                        "商品進貨成本最多只能有兩位小數");
+            }
+
+            // 暫存通過驗證的商品及單價
+            products.add(product);
+            unitPrices.add(unitPrice);
+        }
+
+        // ========================================
+        // IV. 刪除原本的商品明細
+        // ========================================
+
+        purchaseOrderItemRepository
+                .deleteByPurchaseOrder_Id(id);
+
+        // ========================================
+        // V. 建立新的商品明細及計算總金額
+        // ========================================
+
+        BigDecimal totalAmount = BigDecimal.ZERO;
+
+        for (int i = 0; i < newItems.size(); i++) {
+
+            PurchaseOrderItemRequest itemRequest =
+                    newItems.get(i);
+
+            Product product = products.get(i);
+
+            BigDecimal unitPrice = unitPrices.get(i);
+
+            // 計算商品小計
+            BigDecimal subtotal = unitPrice.multiply(
+                    BigDecimal.valueOf(itemRequest.getQuantity()));
+
+            // 建立新的訂貨明細
+            PurchaseOrderItem newItem =
+                    new PurchaseOrderItem();
+
+            newItem.setPurchaseOrder(existing);
+            newItem.setProduct(product);
+            newItem.setQuantity(itemRequest.getQuantity());
+            newItem.setUnitPrice(unitPrice);
+            newItem.setSubtotal(subtotal);
+            newItem.setCreatedAt(now);
+
+            // 儲存新的商品明細
+            purchaseOrderItemRepository.save(newItem);
+
+            // 累加訂貨單總金額
+            totalAmount = totalAmount.add(subtotal);
+        }
+
+        // ========================================
+        // VI. 更新訂貨單總金額
+        // ========================================
+
+        existing.setTotalAmount(totalAmount);
+
+        // 更新最後修改時間
+        existing.setUpdatedAt(now);
 
         return purchaseOrderRepository.save(existing);
     }
