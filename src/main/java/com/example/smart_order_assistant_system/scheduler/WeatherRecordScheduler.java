@@ -31,7 +31,7 @@ public class WeatherRecordScheduler {
     // 每小時的第 0 分 0 秒執行一次
     // 使用台灣時區
     @Scheduled(
-        cron = "0 * * * * *",
+        cron = "0 0 * * * *",
         zone = "Asia/Taipei"
     )
     public void collectWeatherRecord() {

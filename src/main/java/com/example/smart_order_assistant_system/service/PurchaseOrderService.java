@@ -3,24 +3,31 @@ package com.example.smart_order_assistant_system.service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.smart_order_assistant_system.constant.OrderStatus;
 import com.example.smart_order_assistant_system.entity.Product;
 import com.example.smart_order_assistant_system.entity.PurchaseOrder;
 import com.example.smart_order_assistant_system.entity.PurchaseOrderItem;
 import com.example.smart_order_assistant_system.entity.Supplier;
+import com.example.smart_order_assistant_system.exception.BusinessConflictException;
+import com.example.smart_order_assistant_system.exception.ResourceNotFoundException;
 import com.example.smart_order_assistant_system.repository.ProductRepository;
 import com.example.smart_order_assistant_system.repository.PurchaseOrderItemRepository;
 import com.example.smart_order_assistant_system.repository.PurchaseOrderRepository;
 import com.example.smart_order_assistant_system.repository.SupplierRepository;
-import com.example.smart_order_assistant_system.constant.OrderStatus;
 
 @Service
 @Transactional(readOnly = true)
 public class PurchaseOrderService {
+
+    private static final Byte ACTIVE = 1;
+    private static final Byte INACTIVE = 0;
 
     private final PurchaseOrderRepository purchaseOrderRepository;
     private final PurchaseOrderItemRepository purchaseOrderItemRepository;
@@ -46,22 +53,23 @@ public class PurchaseOrderService {
 
     // 查詢所有正常且未軟刪除的訂貨單
     public List<PurchaseOrder> findAllPurchaseOrders() {
-        return purchaseOrderRepository.findAll()
-                .stream()
-                .filter(this::isAvailable)
-                .toList();
+
+        return purchaseOrderRepository
+                .findByStatusAndDeletedAtIsNull(ACTIVE);
     }
 
     // 依訂貨單 ID 查詢
     public PurchaseOrder findPurchaseOrderById(Long id) {
+
         if (id == null) {
             throw new IllegalArgumentException("訂貨單 ID 不可為空");
         }
 
-        return purchaseOrderRepository.findByIdAndDeletedAtIsNull(id)
-                .filter(this::isAvailable)
+        return purchaseOrderRepository
+                .findByIdAndStatusAndDeletedAtIsNull(id, ACTIVE)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("找不到有效的訂貨單"));
+                        new ResourceNotFoundException(
+                                "找不到有效的訂貨單"));
     }
 
     // 依訂貨流程狀態查詢
@@ -71,25 +79,25 @@ public class PurchaseOrderService {
         validateOrderStatus(orderStatus);
 
         return purchaseOrderRepository
-                .findByOrderStatusAndDeletedAtIsNull(orderStatus)
-                .stream()
-                .filter(this::isAvailable)
-                .toList();
+                .findByOrderStatusAndStatusAndDeletedAtIsNull(
+                        orderStatus,
+                        ACTIVE
+                );
     }
 
     // 依供應商 ID 查詢訂貨單
     public List<PurchaseOrder> findPurchaseOrdersBySupplier(
             Long supplierId) {
 
+        // 檢查供應商 ID 是否有效
         if (supplierId == null) {
             throw new IllegalArgumentException("供應商 ID 不可為空");
         }
 
+        // 查詢該供應商的有效訂貨單
+        // 不檢查供應商目前是否啟用，以保留歷史訂單查詢能力
         return purchaseOrderRepository
-                .findBySupplier_Id(supplierId)
-                .stream()
-                .filter(this::isAvailable)
-                .toList();
+                .findBySupplier_IdAndStatusAndDeletedAtIsNull(supplierId, ACTIVE);
     }
 
     // 依訂貨日期區間查詢
@@ -100,15 +108,16 @@ public class PurchaseOrderService {
         validateDateRange(startDate, endDate);
 
         return purchaseOrderRepository
-                .findByOrderDateBetweenAndDeletedAtIsNull(
-                        startDate, endDate)
-                .stream()
-                .filter(this::isAvailable)
-                .toList();
+                .findByOrderDateBetweenAndStatusAndDeletedAtIsNull(
+                        startDate,
+                        endDate,
+                        ACTIVE
+                );
     }
 
     // 查詢指定訂貨單的所有商品明細
     public List<PurchaseOrderItem> findPurchaseOrderItems(Long orderId) {
+
         // 先確認訂貨單存在且有效
         findPurchaseOrderById(orderId);
 
@@ -125,6 +134,7 @@ public class PurchaseOrderService {
             PurchaseOrder order,
             List<PurchaseOrderItem> items) {
 
+        // 驗證訂貨單基本資料
         validateNewOrder(order, items);
 
         // 確認供應商存在、啟用且未刪除
@@ -133,14 +143,26 @@ public class PurchaseOrderService {
 
         LocalDateTime now = LocalDateTime.now();
 
+        // 設定訂貨單基本資料
+        order.setId(null);
         order.setSupplier(supplier);
-        order.setOrderDate(
-                order.getOrderDate() == null
-                        ? now
-                        : order.getOrderDate());
 
+        // 未提供訂貨日期時，使用目前時間
+        if (order.getOrderDate() == null) {
+            order.setOrderDate(now);
+        }
+
+        // 再次檢查預計到貨日期
+        if (order.getExpectedDeliveryDate() != null
+                && order.getExpectedDeliveryDate().isBefore(
+                        order.getOrderDate().toLocalDate())) {
+            throw new IllegalArgumentException(
+                    "預計到貨日期不可早於訂貨日期");
+        }
+
+        // 新增訂貨單一律從草稿狀態開始
         order.setOrderStatus(OrderStatus.DRAFT);
-        order.setStatus((byte) 1);
+        order.setStatus(ACTIVE);
         order.setTotalAmount(BigDecimal.ZERO);
         order.setDeletedAt(null);
         order.setCreatedAt(now);
@@ -152,30 +174,67 @@ public class PurchaseOrderService {
 
         BigDecimal totalAmount = BigDecimal.ZERO;
 
+        // 用來檢查同一張訂貨單是否有重複商品
+        Set<Long> productIds = new HashSet<>();
+
         // 逐筆驗證並儲存訂貨明細
         for (PurchaseOrderItem item : items) {
+
             validateOrderItem(item);
 
-            Product product = findAvailableProduct(
-                    item.getProduct().getId());
+            Long productId = item.getProduct().getId();
 
+            // 同一張訂貨單不允許重複新增相同商品
+            if (!productIds.add(productId)) {
+                throw new BusinessConflictException(
+                        "同一張訂貨單不可重複新增相同商品");
+            }
+
+            // 確認商品存在、啟用且未刪除
+            Product product = findAvailableProduct(productId);
+
+            // 確認商品進貨成本存在且合理
+            BigDecimal unitPrice = product.getCostPrice();
+
+            if (unitPrice == null) {
+                throw new BusinessConflictException(
+                        "商品「" + product.getName()
+                                + "」尚未設定進貨成本，無法建立訂貨單");
+            }
+
+            if (unitPrice.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessConflictException(
+                        "商品進貨成本不可小於 0");
+            }
+
+            // 檢查進貨成本的小數位數
+            if (unitPrice.stripTrailingZeros().scale() > 2) {
+                throw new BusinessConflictException(
+                        "商品進貨成本最多只能有兩位小數");
+            }
+
+            // 計算商品小計
+            BigDecimal subtotal = unitPrice.multiply(
+                    BigDecimal.valueOf(item.getQuantity()));
+
+            // 設定訂貨明細資料
+            item.setId(null);
             item.setPurchaseOrder(savedOrder);
             item.setProduct(product);
 
-            // 計算商品小計
-            BigDecimal subtotal = item.getUnitPrice()
-                    .multiply(BigDecimal.valueOf(item.getQuantity()));
-
+            // 使用商品目前的進貨成本作為訂貨當下單價
+            item.setUnitPrice(unitPrice);
             item.setSubtotal(subtotal);
             item.setCreatedAt(now);
 
+            // 儲存訂貨明細
             purchaseOrderItemRepository.save(item);
 
             // 累加訂貨單總金額
             totalAmount = totalAmount.add(subtotal);
         }
 
-        // 更新訂貨單總金額
+        // 更新訂貨單總金額及最後更新時間
         savedOrder.setTotalAmount(totalAmount);
         savedOrder.setUpdatedAt(LocalDateTime.now());
 
@@ -199,14 +258,16 @@ public class PurchaseOrderService {
 
         // 只允許修改草稿中的訂貨單
         if (!OrderStatus.DRAFT.equals(existing.getOrderStatus())) {
-            throw new IllegalArgumentException(
+            throw new BusinessConflictException(
                     "只有 DRAFT 狀態的訂貨單可以修改");
         }
 
         // 有提供新供應商時，檢查供應商是否有效
         if (newData.getSupplier() != null) {
+
             if (newData.getSupplier().getId() == null) {
-                throw new IllegalArgumentException("供應商 ID 不可為空");
+                throw new IllegalArgumentException(
+                        "供應商 ID 不可為空");
             }
 
             Supplier supplier = findAvailableSupplier(
@@ -216,7 +277,8 @@ public class PurchaseOrderService {
         }
 
         // 預計到貨日期可以設為 null
-        LocalDate expectedDate = newData.getExpectedDeliveryDate();
+        LocalDate expectedDate =
+                newData.getExpectedDeliveryDate();
 
         if (expectedDate != null
                 && expectedDate.isBefore(
@@ -225,8 +287,10 @@ public class PurchaseOrderService {
                     "預計到貨日期不可早於訂貨日期");
         }
 
+        // 更新訂貨單資料
         existing.setExpectedDeliveryDate(expectedDate);
-        existing.setRemark(normalizeOptionalText(newData.getRemark()));
+        existing.setRemark(
+                normalizeOptionalText(newData.getRemark()));
         existing.setUpdatedAt(LocalDateTime.now());
 
         return purchaseOrderRepository.save(existing);
@@ -239,10 +303,12 @@ public class PurchaseOrderService {
     // 草稿送出
     @Transactional
     public PurchaseOrder submitPurchaseOrder(Long id) {
+
         PurchaseOrder order = findPurchaseOrderById(id);
 
+        // 只有草稿狀態可以送出
         if (!OrderStatus.DRAFT.equals(order.getOrderStatus())) {
-            throw new IllegalArgumentException(
+            throw new BusinessConflictException(
                     "只有 DRAFT 狀態的訂貨單可以送出");
         }
 
@@ -252,7 +318,7 @@ public class PurchaseOrderService {
                         .findByPurchaseOrder_Id(id);
 
         if (items.isEmpty()) {
-            throw new IllegalArgumentException(
+            throw new BusinessConflictException(
                     "訂貨單至少需要一筆商品明細");
         }
 
@@ -265,10 +331,12 @@ public class PurchaseOrderService {
     // 標記為已到貨
     @Transactional
     public PurchaseOrder receivePurchaseOrder(Long id) {
+
         PurchaseOrder order = findPurchaseOrderById(id);
 
+        // 只有已送出的訂貨單可以標記到貨
         if (!OrderStatus.SUBMITTED.equals(order.getOrderStatus())) {
-            throw new IllegalArgumentException(
+            throw new BusinessConflictException(
                     "只有 SUBMITTED 狀態的訂貨單可以標記到貨");
         }
 
@@ -281,11 +349,14 @@ public class PurchaseOrderService {
     // 取消訂貨單
     @Transactional
     public PurchaseOrder cancelPurchaseOrder(Long id) {
+
         PurchaseOrder order = findPurchaseOrderById(id);
 
+        // 只有草稿或已送出的訂貨單可以取消
         if (!OrderStatus.DRAFT.equals(order.getOrderStatus())
-                && !OrderStatus.SUBMITTED.equals(order.getOrderStatus())) {
-            throw new IllegalArgumentException(
+                && !OrderStatus.SUBMITTED.equals(
+                        order.getOrderStatus())) {
+            throw new BusinessConflictException(
                     "只有 DRAFT 或 SUBMITTED 狀態的訂貨單可以取消");
         }
 
@@ -301,18 +372,21 @@ public class PurchaseOrderService {
 
     @Transactional
     public PurchaseOrder deletePurchaseOrder(Long id) {
+
         PurchaseOrder order = findPurchaseOrderById(id);
 
         // 已送出或已到貨的訂貨單保留歷史紀錄
         if (!OrderStatus.DRAFT.equals(order.getOrderStatus())
-                && !OrderStatus.CANCELLED.equals(order.getOrderStatus())) {
-            throw new IllegalArgumentException(
+                && !OrderStatus.CANCELLED.equals(
+                        order.getOrderStatus())) {
+            throw new BusinessConflictException(
                     "只有 DRAFT 或 CANCELLED 狀態的訂貨單可以刪除");
         }
 
         LocalDateTime now = LocalDateTime.now();
 
-        order.setStatus((byte) 0);
+        // 設定軟刪除狀態
+        order.setStatus(INACTIVE);
         order.setDeletedAt(now);
         order.setUpdatedAt(now);
 
@@ -348,6 +422,7 @@ public class PurchaseOrderService {
                     "訂貨備註不可超過 500 字");
         }
 
+        // 有提供訂貨日期時，檢查預計到貨日期
         if (order.getExpectedDeliveryDate() != null
                 && order.getOrderDate() != null
                 && order.getExpectedDeliveryDate().isBefore(
@@ -359,6 +434,7 @@ public class PurchaseOrderService {
 
     // 驗證訂貨明細
     private void validateOrderItem(PurchaseOrderItem item) {
+
         if (item == null) {
             throw new IllegalArgumentException("訂貨明細不可為空");
         }
@@ -369,66 +445,73 @@ public class PurchaseOrderService {
                     "每筆訂貨明細都必須指定商品");
         }
 
-        if (item.getQuantity() == null || item.getQuantity() <= 0) {
-            throw new IllegalArgumentException("訂貨數量必須大於 0");
-        }
-
-        if (item.getUnitPrice() == null
-                || item.getUnitPrice().compareTo(BigDecimal.ZERO) < 0) {
-            throw new IllegalArgumentException("訂貨單價不可小於 0");
-        }
-
-        if (item.getUnitPrice().scale() > 2) {
+        if (item.getQuantity() == null
+                || item.getQuantity() <= 0) {
             throw new IllegalArgumentException(
-                    "訂貨單價最多只能有兩位小數");
+                    "訂貨數量必須大於 0");
         }
     }
 
     // 確認供應商存在、啟用且未刪除
     private Supplier findAvailableSupplier(Long supplierId) {
+
         if (supplierId == null) {
             throw new IllegalArgumentException("供應商 ID 不可為空");
         }
 
-        return supplierRepository.findByIdAndDeletedAtIsNull(supplierId)
-                .filter(supplier ->
-                        supplier.getStatus() != null
-                                && supplier.getStatus() == 1)
+        // 先確認供應商是否存在且未刪除
+        Supplier supplier = supplierRepository
+                .findByIdAndDeletedAtIsNull(supplierId)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "找不到啟用中的供應商，或供應商已被刪除"));
+                        new ResourceNotFoundException(
+                                "找不到供應商，或供應商已被刪除"));
+
+        // 再確認供應商是否啟用
+        if (!ACTIVE.equals(supplier.getStatus())) {
+            throw new BusinessConflictException(
+                    "停用中的供應商無法建立訂貨單");
+        }
+
+        return supplier;
     }
 
     // 確認商品存在、啟用且未刪除
     private Product findAvailableProduct(Long productId) {
+
         if (productId == null) {
             throw new IllegalArgumentException("商品 ID 不可為空");
         }
 
-        return productRepository.findById(productId)
-                .filter(product ->
-                        product.getStatus() != null
-                                && product.getStatus() == 1
-                                && product.getDeletedAt() == null)
+        // 先確認商品是否存在
+        Product product = productRepository.findById(productId)
                 .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "找不到啟用中的商品，或商品已被刪除"));
-    }
+                        new ResourceNotFoundException(
+                                "找不到指定商品"));
 
-    // 判斷訂貨單是否正常且未軟刪除
-    private boolean isAvailable(PurchaseOrder order) {
-        return order.getStatus() != null
-                && order.getStatus() == 1
-                && order.getDeletedAt() == null;
+        // 確認商品是否已軟刪除
+        if (product.getDeletedAt() != null) {
+            throw new ResourceNotFoundException(
+                    "商品已被刪除，無法建立訂貨單");
+        }
+
+        // 確認商品是否啟用
+        if (!ACTIVE.equals(product.getStatus())) {
+            throw new BusinessConflictException(
+                    "停用中的商品無法建立訂貨單");
+        }
+
+        return product;
     }
 
     // 驗證訂貨流程狀態
     private void validateOrderStatus(String orderStatus) {
+
         if (!OrderStatus.DRAFT.equals(orderStatus)
                 && !OrderStatus.SUBMITTED.equals(orderStatus)
                 && !OrderStatus.RECEIVED.equals(orderStatus)
                 && !OrderStatus.CANCELLED.equals(orderStatus)) {
-            throw new IllegalArgumentException("不合法的訂貨單狀態");
+            throw new IllegalArgumentException(
+                    "不合法的訂貨單狀態");
         }
     }
 
@@ -450,6 +533,7 @@ public class PurchaseOrderService {
 
     // 空白字串轉為 null
     private String normalizeOptionalText(String value) {
+
         if (value == null || value.isBlank()) {
             return null;
         }

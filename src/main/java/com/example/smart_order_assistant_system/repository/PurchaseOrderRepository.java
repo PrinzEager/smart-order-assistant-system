@@ -11,30 +11,31 @@ import com.example.smart_order_assistant_system.entity.PurchaseOrder;
 public interface PurchaseOrderRepository
         extends JpaRepository<PurchaseOrder, Long> {
 
-    // 依訂貨流程狀態查詢
-    List<PurchaseOrder> findByOrderStatus(String orderStatus);
-
-    // 查詢指定狀態且未軟刪除的訂貨單
-    List<PurchaseOrder> findByOrderStatusAndDeletedAtIsNull(
-            String orderStatus
+    // 根據訂單狀態及資料狀態查詢未刪除的訂貨單
+    List<PurchaseOrder> findByOrderStatusAndStatusAndDeletedAtIsNull(
+            String orderStatus,
+            Byte status
     );
 
-    // 依供應商編號查詢訂貨單
-    List<PurchaseOrder> findBySupplier_Id(Long supplierId);
+    // 根據供應商 ID 查詢未刪除的訂貨單
+    List<PurchaseOrder> findBySupplier_IdAndStatusAndDeletedAtIsNull(
+            Long supplierId,
+            Byte status
+    );
 
-    // 依訂貨日期時間區間查詢
-    List<PurchaseOrder> findByOrderDateBetween(
+    // 根據訂單日期區間查詢未刪除的訂貨單
+    List<PurchaseOrder> findByOrderDateBetweenAndStatusAndDeletedAtIsNull(
             LocalDateTime startDate,
-            LocalDateTime endDate
+            LocalDateTime endDate,
+            Byte status
     );
 
-    // 查詢指定日期區間內、未軟刪除的訂貨單
-    List<PurchaseOrder> findByOrderDateBetweenAndDeletedAtIsNull(
-            LocalDateTime startDate,
-            LocalDateTime endDate
+    // 根據訂貨單 ID 查詢未刪除的訂貨單
+    Optional<PurchaseOrder> findByIdAndStatusAndDeletedAtIsNull(
+            Long id,
+            Byte status
     );
 
-    // 依訂貨單編號及未軟刪除條件查詢
-    Optional<PurchaseOrder> findByIdAndDeletedAtIsNull(Long id);
-
+    // 查詢所有未刪除的訂貨單
+    List<PurchaseOrder> findByStatusAndDeletedAtIsNull(Byte status);
 }
