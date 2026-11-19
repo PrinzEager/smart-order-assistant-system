@@ -1,5 +1,6 @@
 package com.example.smart_order_assistant_system.controller;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -58,12 +59,25 @@ public class PurchaseOrderController {
         return ResponseEntity.ok(responses);
     }
 
+
     // ========================================
-    // 1-1. 分頁查詢訂貨單
+    // 1-1. 分頁及多條件查詢訂貨單
     // ========================================
 
     @GetMapping("/page")
     public ResponseEntity<Page<PurchaseOrderResponse>> findPurchaseOrdersPage(
+
+            // 供應商 ID，選填
+            @RequestParam(required = false) Long supplierId,
+
+            // 訂單狀態，選填
+            @RequestParam(required = false) String orderStatus,
+
+            // 開始日期，選填，格式：yyyy-MM-dd
+            @RequestParam(required = false) LocalDate startDate,
+
+            // 結束日期，選填，格式：yyyy-MM-dd
+            @RequestParam(required = false) LocalDate endDate,
 
             // 頁碼，預設從第 0 頁開始
             @RequestParam(defaultValue = "0") int page,
@@ -76,6 +90,10 @@ public class PurchaseOrderController {
 
             // 排序方向，預設由新到舊
             @RequestParam(defaultValue = "DESC") String direction) {
+
+        // ========================================
+        // I. 驗證分頁參數
+        // ========================================
 
         // 檢查頁碼不可小於 0
         if (page < 0) {
@@ -95,14 +113,22 @@ public class PurchaseOrderController {
                     "每頁筆數不可超過 100");
         }
 
-        // 只允許指定的欄位進行排序，避免任意欄位排序
+        // ========================================
+        // II. 驗證排序欄位
+        // ========================================
+
+        // 只允許指定欄位進行排序
         if (!List.of("createdAt", "orderDate", "totalAmount", "id")
                 .contains(sortBy)) {
+
             throw new IllegalArgumentException(
                     "不支援的排序欄位");
         }
 
-        // 將排序方向轉換成 Spring Data JPA 的 Sort.Direction
+        // ========================================
+        // III. 驗證排序方向
+        // ========================================
+
         Sort.Direction sortDirection;
 
         try {
@@ -112,21 +138,34 @@ public class PurchaseOrderController {
                     "排序方向只能是 ASC 或 DESC");
         }
 
-        // 建立分頁及排序條件
+        // ========================================
+        // IV. 建立分頁及排序條件
+        // ========================================
+
         Pageable pageable = PageRequest.of(
                 page,
                 size,
                 Sort.by(sortDirection, sortBy)
         );
 
-        // 呼叫 Service 執行分頁查詢
+        // ========================================
+        // V. 呼叫 Service 執行多條件查詢
+        // ========================================
+
         Page<PurchaseOrderResponse> responses =
-                purchaseOrderService.findPurchaseOrdersPage(pageable)
-                        .map(this::convertToResponse);
+                purchaseOrderService.findPurchaseOrdersByConditions(
+                        supplierId,
+                        orderStatus,
+                        startDate,
+                        endDate,
+                        pageable
+                )
+                .map(this::convertToResponse);
 
         // 回傳分頁查詢結果
         return ResponseEntity.ok(responses);
     }
+
 
     // ========================================
     // 2. 查詢單筆訂貨單

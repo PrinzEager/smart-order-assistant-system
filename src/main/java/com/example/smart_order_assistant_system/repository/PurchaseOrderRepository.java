@@ -7,6 +7,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.example.smart_order_assistant_system.entity.PurchaseOrder;
 
@@ -44,6 +46,26 @@ public interface PurchaseOrderRepository
     // 分頁查詢所有有效且未軟刪除的訂貨單
     Page<PurchaseOrder> findByStatusAndDeletedAtIsNull(
             Byte status,
+            Pageable pageable
+    );
+
+    // 根據供應商、訂單狀態及日期區間進行多條件分頁查詢
+    @Query("""
+            SELECT po
+            FROM PurchaseOrder po
+            WHERE po.status = :status
+              AND po.deletedAt IS NULL
+              AND (:supplierId IS NULL OR po.supplier.id = :supplierId)
+              AND (:orderStatus IS NULL OR po.orderStatus = :orderStatus)
+              AND (:startDate IS NULL OR po.orderDate >= :startDate)
+              AND (:endDate IS NULL OR po.orderDate < :endDate)
+            """)
+    Page<PurchaseOrder> findByConditions(
+            @Param("supplierId") Long supplierId,
+            @Param("orderStatus") String orderStatus,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("status") Byte status,
             Pageable pageable
     );
 }

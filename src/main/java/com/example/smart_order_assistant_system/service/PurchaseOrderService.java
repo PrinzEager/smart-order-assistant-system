@@ -74,6 +74,72 @@ public class PurchaseOrderService {
                 );
     }
 
+    // 依照多種條件進行訂貨單分頁查詢
+    public Page<PurchaseOrder> findPurchaseOrdersByConditions(
+            Long supplierId,
+            String orderStatus,
+            LocalDate startDate,
+            LocalDate endDate,
+            Pageable pageable) {
+
+        // ========================================
+        // I. 驗證查詢條件
+        // ========================================
+
+        // 供應商 ID 如果有提供，必須大於 0
+        if (supplierId != null && supplierId <= 0) {
+            throw new IllegalArgumentException(
+                    "供應商 ID 必須大於 0");
+        }
+
+        // 有提供訂單狀態時，驗證是否合法
+        if (orderStatus != null && !orderStatus.isBlank()) {
+            orderStatus = orderStatus.trim();
+            validateOrderStatus(orderStatus);
+        } else {
+            // 空字串或只有空白時，視為沒有指定狀態
+            orderStatus = null;
+        }
+
+        // ========================================
+        // II. 驗證日期區間
+        // ========================================
+
+        LocalDateTime startDateTime = null;
+        LocalDateTime endDateTime = null;
+
+        // 有提供開始日期時，轉換為當天 00:00:00
+        if (startDate != null) {
+            startDateTime = startDate.atStartOfDay();
+        }
+
+        // 有提供結束日期時，將隔天 00:00:00 作為不包含的上限
+        if (endDate != null) {
+            endDateTime = endDate.plusDays(1).atStartOfDay();
+        }
+
+        // 開始日期不可晚於結束日期
+        if (startDate != null && endDate != null
+                && startDate.isAfter(endDate)) {
+
+            throw new IllegalArgumentException(
+                    "開始日期不可晚於結束日期");
+        }
+
+        // ========================================
+        // III. 執行多條件分頁查詢
+        // ========================================
+
+        return purchaseOrderRepository.findByConditions(
+                supplierId,
+                orderStatus,
+                startDateTime,
+                endDateTime,
+                ACTIVE,
+                pageable
+        );
+    }
+
     // 依訂貨單 ID 查詢
     public PurchaseOrder findPurchaseOrderById(Long id) {
 
