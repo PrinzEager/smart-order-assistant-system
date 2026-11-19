@@ -68,4 +68,17 @@ public interface PurchaseOrderRepository
             @Param("status") Byte status,
             Pageable pageable
     );
+
+    // 計算指定商品目前所有已送出訂貨單的未到貨數量
+    @Query("""
+            SELECT COALESCE(SUM(item.quantity), 0)
+            FROM PurchaseOrderItem item
+            WHERE item.product.id = :productId
+              AND item.purchaseOrder.orderStatus = 'SUBMITTED'
+              AND item.purchaseOrder.status = 1
+              AND item.purchaseOrder.deletedAt IS NULL
+            """)
+    Long calculateOutstandingQuantity(
+            @Param("productId") Long productId
+    );
 }

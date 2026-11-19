@@ -19,6 +19,12 @@ public class CwaApiClient {
     // 中央氣象署目前使用的測站觀測資料集 ID
     private static final String DATA_ID = "O-A0001-001";
 
+    // 中央氣象署高雄市未來 1 週鄉鎮天氣預報資料集 ID
+    private static final String FORECAST_DATA_ID = "F-D0047-067";
+
+    // 商店所在地區
+    private static final String FORECAST_LOCATION = "路竹區";
+
     // Spring RestClient：負責發送 HTTP 請求
     private final RestClient restClient;
 
@@ -128,6 +134,60 @@ public class CwaApiClient {
                 }
 
                 return "HTTP 請求未成功";
+        }
+    }
+
+    /**
+     * 取得高雄市未來一週天氣預報原始 JSON。
+     *
+     * @return 中央氣象署回傳的 JSON 資料
+     */
+    public JsonNode getWeatherForecast() {
+
+        try {
+            // 呼叫中央氣象署未來一週鄉鎮天氣預報 API
+            return restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/{dataId}")
+
+                            // 使用 Query Parameter 傳送授權碼
+                            .queryParam("Authorization", authorization)
+
+                            // 指定 JSON 格式
+                            .queryParam("format", "JSON")
+
+                            .build(FORECAST_DATA_ID))
+
+                    .retrieve()
+                    .body(JsonNode.class);
+
+        } catch (RestClientResponseException e) {
+
+            // 處理 HTTP 4xx、5xx 錯誤
+            int statusCode = e.getStatusCode().value();
+
+            throw new IllegalStateException(
+                    "中央氣象署天氣預報 API 回應錯誤，HTTP 狀態碼："
+                            + statusCode
+                            + "，原因：" + getHttpErrorMessage(statusCode),
+                    e
+            );
+
+        } catch (ResourceAccessException e) {
+
+            // 處理連線失敗及逾時
+            throw new IllegalStateException(
+                    "連線或讀取中央氣象署天氣預報 API 失敗",
+                    e
+            );
+
+        } catch (RestClientException e) {
+
+            // 處理其他 HTTP 呼叫錯誤
+            throw new IllegalStateException(
+                    "呼叫中央氣象署天氣預報 API 時發生錯誤",
+                    e
+            );
         }
     }
 

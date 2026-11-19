@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.example.smart_order_assistant_system.entity.Sale;
 
@@ -32,5 +34,19 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             LocalDateTime startDateTime,
             LocalDateTime endDateTime,
             Pageable pageable
+    );
+
+    // 統計指定商品在指定時間區間內，尚未軟刪除的銷售總數量
+    @Query("""
+        SELECT COALESCE(SUM(s.quantity), 0)
+        FROM Sale s
+        WHERE s.product.id = :productId
+        AND s.dateTime BETWEEN :startDateTime AND :endDateTime
+        AND s.deletedAt IS NULL
+    """)
+    Long sumQuantityByProductAndDateTimeBetween(
+            @Param("productId") Long productId,
+            @Param("startDateTime") LocalDateTime startDateTime,
+            @Param("endDateTime") LocalDateTime endDateTime
     );
 }

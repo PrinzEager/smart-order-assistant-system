@@ -55,4 +55,16 @@ public interface WeatherRecordRepository
             LocalDate recordDate,
             LocalTime recordTime
     );
+
+    // 查詢指定測站在指定日期區間內的天氣紀錄
+    List<WeatherRecord> findByStationIdAndRecordDateBetween(
+            String stationId,
+            LocalDate startDate,
+            LocalDate endDate
+    );
+
+    // 查詢指定測站最新的天氣紀錄
+    Optional<WeatherRecord> findFirstByStationIdOrderByRecordDateDescRecordTimeDesc(
+            String stationId
+    );
 }

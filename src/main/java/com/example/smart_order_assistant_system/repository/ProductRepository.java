@@ -57,6 +57,12 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             Pageable pageable
     );
 
+    // 根據商品 ID 查詢啟用且未軟刪除的商品
+    Optional<Product> findByIdAndStatusAndDeletedAtIsNull(
+            Long id,
+            Byte status
+    );
+
     // 商品名稱、SKU、Barcode 多欄位模糊搜尋
     // 只查詢啟用且未軟刪除的商品
      @Query("""
